@@ -167,6 +167,56 @@ test("unlocks are posted in guild chat: batched, throttled, never retro", functi
     Clean(w)
 end)
 
+test("slash commands: /inn and /gach both work", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    local names = {}
+    for i = 1, 5 do
+        local v = p.bob.env["SLASH_GUILDACHIEVEMENTS" .. i]
+        if v then
+            ok(not names[v], v .. " registered twice")
+            names[v] = true
+        end
+    end
+    ok(names["/inn"] and names["/gach"], "both /inn and /gach")
+    Clean(w)
+end)
+
+test("officer-written custom achievements are never posted from the recipient", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob)
+    p.ana:Slash("create 10 Something Rude | officer-written text")
+    w:Advance(2)
+    local id = CustomIdByName(p.ana, "Something Rude")
+    p.ana:Slash("grant Bob " .. id)
+    w:Advance(15)
+    ok(p.bob:Earned(id), "Bob still gets it")
+    p.ana:Slash("revoke Bob " .. id)
+    w:Advance(2)
+    p.ana:Slash("grant Bob " .. id)
+    w:Advance(15)
+    for _, line in ipairs(ChatLines(p.bob)) do
+        ok(not line:find("Something Rude", 1, true), "posted from Bob's character: " .. line)
+    end
+    ok(p.ana:LogHas("granted"), "the officer still sees the grant go through")
+    Clean(w)
+end)
+
+test("guild chat posts wait until the fight is over", function()
+    local w, p = Guild()
+    p.bob.state.money = 500000
+    LoginAll(w, p.bob)
+    p.bob.state.combat = true
+    p.bob.state.level = 10
+    p.bob:Fire("PLAYER_LEVEL_UP", 10)
+    w:Advance(20)
+    eq(#p.bob.chat, 0, "held during combat")
+    p.bob.state.combat = false
+    w:Advance(6)
+    eq(#p.bob.chat, 1, "posted after")
+    Clean(w)
+end)
+
 test("older installs switch guild chat announcements on once", function()
     local w, p = Guild()
     p.bob.saved.GuildAchDB = { settings = { announce = false } } -- the 0.1/0.2 default
@@ -1268,6 +1318,7 @@ local ALLOWED_GLOBALS = {
     -- ...plus post-hooks: our code runs after JumpOrAscendStart / DoEmote /
     -- AbandonQuest and never changes what they do (no taint, no automation)
     "hooksecurefunc",
+    "InCombatLockdown", -- read-only: are we in combat (to hold guild chat posts)
     -- Own UI, timers and saved data
     "CreateFrame", "UIParent", "UISpecialFrames", "PlaySound", "C_Timer", "SlashCmdList",
     "GuildAchDB", "GuildAchCharDB", "SLASH_GUILDACHIEVEMENTS1", "SLASH_GUILDACHIEVEMENTS2", "SLASH_GUILDACHIEVEMENTS3",

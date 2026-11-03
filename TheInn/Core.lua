@@ -618,6 +618,13 @@ end
 local function FlushAnnounce()
     announceScheduled = false
     if #announceQueue == 0 then return end
+    -- Chat can be blocked in combat (in instances on newer clients) and isn't
+    -- retried like addon messages, so wait until the fight is over.
+    if InCombatLockdown and InCombatLockdown() then
+        announceScheduled = true
+        C_Timer.After(5, FlushAnnounce)
+        return
+    end
     local wait = 10 - (GetTime() - lastAnnounce)
     if wait > 0 then
         announceScheduled = true
@@ -651,7 +658,10 @@ local function WillAnnounce()
 end
 
 local function QueueAnnounce(d, first)
-    if not WillAnnounce() then return end
+    -- Custom achievements have officer-written names and descriptions. Never
+    -- post those from the recipient's character: a player shouldn't "say"
+    -- something in guild chat that someone else wrote.
+    if d.type == "custom" or not WillAnnounce() then return end
     announceQueue[#announceQueue + 1] = { d = d, first = first }
     if not announceScheduled then
         announceScheduled = true
@@ -689,7 +699,7 @@ function ns.Earn(id, opts)
         ns.Print(string.format("You earned |cffffd100[%s]|r (%d pts)%s", d.name, d.points or 0,
                                first and " |cffffd100- guild first!|r" or ""))
         if ns.UI then ns.UI.Toast(d, nil, first) end
-        local flags = (WillAnnounce() and "a" or "") .. (first and "f" or "")
+        local flags = ((WillAnnounce() and d.type ~= "custom") and "a" or "") .. (first and "f" or "")
         if ns.Comm then ns.Comm.Send("E", id, ts, flags) end
         QueueAnnounce(d, first)
         if first then ns.Bump("guildFirsts") end
@@ -1264,8 +1274,8 @@ local HELP = {
 }
 
 SLASH_GUILDACHIEVEMENTS1 = "/inn"
-SLASH_GUILDACHIEVEMENTS2 = "/guildach"
-SLASH_GUILDACHIEVEMENTS3 = "/inn"
+SLASH_GUILDACHIEVEMENTS2 = "/gach"
+SLASH_GUILDACHIEVEMENTS3 = "/guildach"
 SlashCmdList.GUILDACHIEVEMENTS = function(msg)
     msg = msg or ""
     local cmd, rest = msg:match("^%s*(%S*)%s*(.-)%s*$")

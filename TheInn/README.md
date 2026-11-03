@@ -25,7 +25,7 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 
 Every unlock shows an **achievement alert** at the bottom of the screen, in the style of the classic Wrath-era one: a gold-framed bar with the icon on the left, the points on a shield on the right, a gold flash and a shine. `/inn badge` shows a test one.
 
-Your unlocks are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. `/inn announce off` turns that off.
+Your unlocks are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. `/inn announce off` turns that off. Custom achievements (named by officers) are never posted from your character, and posts wait until you're out of combat.
 
 ### What there is to earn
 
@@ -97,6 +97,11 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.6.2**
+- `/gach` works again next to `/inn` (0.6.0 accidentally registered `/inn` twice instead).
+- Custom achievements, whose names officers write, are no longer posted in guild chat from the recipient's character.
+- Guild chat posts wait until you're out of combat.
 
 **0.6.1**
 - A beer tankard as the addon's icon in the AddOns list.

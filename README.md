@@ -36,7 +36,7 @@ ln -s "$PWD/TheInn" "/Applications/World of Warcraft/_classic_era_/Interface/Add
 
 ## Staying within Blizzard's rules
 
-The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus an opt-in guild chat line). The `addon only uses approved game APIs` test fails if code starts calling any game function that isn't on its allowlist. Review anything new before adding it there. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
+The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The `addon only uses approved game APIs` test fails if code starts calling any game function that isn't on its allowlist. Review anything new before adding it there. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
 
 ## Releasing
 

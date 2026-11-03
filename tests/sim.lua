@@ -415,6 +415,7 @@ function Client:BuildEnv()
     env.IsFlying = function() return false end
     env.UnitOnTaxi = function(unit) return unit == "player" and st.onTaxi == true end
     env.IsMounted = function() return st.mounted == true end
+    env.InCombatLockdown = function() return st.combat == true end
     env.GetUnitSpeed = function() return 0, st.mounted and (st.mountSpeed or 11.2) or 7, 0, 4.7 end
     env.UnitIsAFK = function(unit) return unit == "player" and st.afk == true end
     env.IsFishingLoot = function() return st.fishing == true end
