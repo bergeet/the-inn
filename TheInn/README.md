@@ -17,7 +17,7 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 `/inn` (or `/gach`) opens the tavern. The sign over the door shows your guild's name (knock on it for a new joke), your **bar tab** (points) is on the right, and there are four rooms:
 
 - **Trophy Wall**: your achievements as plaques, by category, with progress bars. Hover one to see which guildmates have it. Hidden ones show `???` and a hint until you earn them.
-- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (wins minus losses) and duels fled. Number one on each board gets a title. The duel boards also show your record against each guildmate.
+- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (by duel rating) and duels fled. Number one on each board gets a title. The duel boards also show your record against each guildmate.
 - **Tavern Gossip**: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries and guild duel results. Deaths in the same place within a minute are grouped, so a raid wipe is one line.
 - **Chess**: the guildies online with the addon, with their rating and a Challenge button; your current game; and practice against the barkeep.
 
@@ -33,7 +33,7 @@ Your unlocks are also **posted in guild chat** (a burst of them becomes one line
 - **Dungeons and Raids**: the final bosses of every vanilla dungeon, and the raid bosses.
 - **Professions**: skill tiers, Cooking, Fishing, First Aid.
 - **PvP**: lifetime honorable kills (straight from the game, so they count from before the install), killing blows on players, highest PvP rank up to rank 14, and one for killing a civilian.
-- **Duels**: wins, losses, fleeing, streaks, an arch-nemesis, beating the Guild Master, losing to a lowbie.
+- **Duels**: wins, losses, fleeing, streaks, reaching a 1400 or 1600 duel rating, an arch-nemesis, beating the Guild Master, losing to a lowbie.
 - **Together**: a dungeon boss with five guildmates, a raid boss with ten, guild firsts, waving at and hugging guildmates, and bowing to (or spitting on) the Guild Master.
 - **Shenanigans**: jumps (up to 100,000), /dance, /chicken, /flex, fishing, Hearthstone, flights, looting greys, epics and legendaries, mounts, AFK, very long sessions, logging in at 3 in the morning, full bags, a full quest log, abandoning quests.
 - **Chess**: wins, games played, reaching a 1400 or 1600 rating, Scholar's Mate, checkmating the Guild Master, stalemates, promotions (and losing a few).
@@ -41,7 +41,7 @@ Your unlocks are also **posted in guild chat** (a burst of them becomes one line
 
 The first time you log in on a character, it quietly credits what you have already done (levels, gold, quests, professions, honorable kills, reputation). Deaths, duels, jumps and the other counters start when you install the addon.
 
-Duels are read from the game's own "X has defeated Y in a duel" message, so a duel only counts for players running the addon.
+Duels are read from the game's own "X has defeated Y in a duel" message, so a duel only counts for players running the addon. Duels between guildies also move a **duel rating** (Elo, starting at 1200), which the Guild duels scoreboard ranks by. Both duelists' addons share their rating from before the duel, so both arrive at the same numbers. Fleeing counts as a loss; duels against strangers don't affect the rating.
 
 Killing blows and deaths by falling, drowning or lava need the combat log. Classic Era gives that to addons. Forever runs on the newer engine, which hides combat data from addons, so if it doesn't provide them those just stay at zero. Honorable kills and PvP rank work on both.
 
@@ -97,6 +97,9 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.6.4**
+- Duel rating: duels between guildies now have an Elo rating (starting at 1200), shown on the Guild duels scoreboard, with achievements for 1400 and 1600.
 
 **0.6.3**
 - A Settings page (button at the bottom of the sidebar) with on/off buttons for guild chat posts, alerts, obituaries and sounds.

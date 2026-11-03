@@ -157,6 +157,9 @@ ns.STATIC = {
     stat("duelStreak5",  "Duels", "bestWinStreak",   5,  10, "On Fire",         "Win 5 duels in a row.",               "INV_Sword_04"),
     stat("duelStreak10", "Duels", "bestWinStreak",   10, 25, "Unstoppable",     "Win 10 duels in a row.",              "INV_Sword_04"),
     stat("loseStreak5",  "Duels", "worstLoseStreak", 5,  5,  "Doormat Deluxe",  "Lose 5 duels in a row.",              "Ability_Parry"),
+    stat("duelElo1400", "Duels", "duelEloPeak", 1400, 15, "Blademaster of the Bar", "Reach a duel rating of 1400.", "INV_Sword_04"),
+    stat("duelElo1600", "Duels", "duelEloPeak", 1600, 25, "Undisputed Champion", "Reach a duel rating of 1600.", "INV_Crown_01",
+         "Beat everyone. Then beat them again."),
     stat("rival10",      "Duels", "maxRivalry",      10, 10, "Arch-Nemesis",    "Duel the same guildmate 10 times.",   "Ability_Warrior_Challange"),
 
     -- Together: things you do with (or to) guildmates

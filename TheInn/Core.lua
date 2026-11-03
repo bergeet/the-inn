@@ -377,10 +377,11 @@ end
 -- the counters guildmates see on the leaderboards.
 ns.STAT_KEYS = { d = "deaths", w = "duelsWon", l = "duelsLost", f = "duelsFled", gw = "gDuelsWon", gl = "gDuelsLost",
                  j = "jumps", hk = "hk", dk = "dk", kb = "killingBlows", pr = "pvpRank",
-                 cw = "chessWins", cl = "chessLosses", cd = "chessDraws", ce = "chessElo" }
+                 cw = "chessWins", cl = "chessLosses", cd = "chessDraws", ce = "chessElo",
+                 dr = "duelElo" }
 -- Counters only go up, so merging keeps the highest value. A chess rating
 -- can drop, so for these the newest value (by the member's rev) wins.
-ns.OVERWRITE_STATS = { ce = true }
+ns.OVERWRITE_STATS = { ce = true, dr = true }
 ns.CHESS_START_ELO = 1200
 ns.SHARED_FIELDS = {}
 for k, field in pairs(ns.STAT_KEYS) do ns.SHARED_FIELDS[field] = k end
@@ -426,6 +427,7 @@ function ns.SharedStats()
     local out = {}
     for k, field in pairs(ns.STAT_KEYS) do out[k] = ns.char.stats[field] or 0 end
     out.ce = ns.char.stats.chessElo or ns.CHESS_START_ELO
+    out.dr = ns.char.stats.duelElo or ns.CHESS_START_ELO
     return out
 end
 
@@ -1014,11 +1016,71 @@ function ns.OnDuel(won, opponent, fled)
         if not won then winner, loser = mate, ns.me end
         local ts = Now()
         ns.AddDuelFeed(winner, loser, fled, ts)
-        if ns.Comm then ns.Comm.Send("U", winner, loser, fled and 1 or 0, ts) end
+        ns.StartDuelRating(mate, won and 1 or 0)
+        if ns.Comm then ns.Comm.Send("U", winner, loser, fled and 1 or 0, ts, ns.DuelElo()) end
     end
     ns.Touch()
     ns.RequestCheck(1)
     if ns.UI then ns.UI.Refresh() end
+end
+
+-- ---------------------------------------------------------------------------
+-- Duel rating (Elo) for duels between guildies
+--
+-- A duel isn't arranged in advance, so each duelist announces its own
+-- rating from before the duel along with the result (the U message). Each
+-- side then computes the change from the same two numbers. If the other
+-- side's message doesn't arrive (say their addon is out of date), we fall
+-- back to the last rating we saw for them after 20 seconds.
+-- ---------------------------------------------------------------------------
+
+local ELO_K = 32
+function ns.EloChange(mine, theirs, score)
+    local expected = 1 / (1 + 10 ^ ((theirs - mine) / 400))
+    return math.floor(ELO_K * (score - expected) + 0.5)
+end
+
+function ns.DuelElo() return ns.char.stats.duelElo or ns.CHESS_START_ELO end
+
+local pendingDuels = {} -- opponent -> { score, before, id }
+
+local function ApplyDuelRating(opp, theirs)
+    local p = pendingDuels[opp]
+    if not p then return end
+    pendingDuels[opp] = nil
+    local change = ns.EloChange(p.before, theirs, p.score)
+    ns.char.stats.duelElo = ns.DuelElo() + change
+    ns.SetStat("duelEloPeak", ns.char.stats.duelElo)
+    ns.Touch()
+    ns.Print(string.format("duel rating %d (%s%d) after %s %s.", ns.char.stats.duelElo, change >= 0 and "+" or "",
+                           change, p.score == 1 and "beating" or "losing to", ns.BaseName(opp)))
+    if ns.UI then ns.UI.Refresh() end
+end
+
+function ns.StartDuelRating(opp, score)
+    if pendingDuels[opp] then -- a quick rematch before we heard back: settle the last one first
+        local g = ns.Guild()
+        local m = g and g.members[opp]
+        ApplyDuelRating(opp, (m and m.stats.dr) or ns.CHESS_START_ELO)
+    end
+    local id = {}
+    pendingDuels[opp] = { score = score, before = ns.DuelElo(), id = id }
+    C_Timer.After(20, function()
+        local p = pendingDuels[opp]
+        if p and p.id == id then
+            local g = ns.Guild()
+            local m = g and g.members[opp]
+            ApplyDuelRating(opp, (m and m.stats.dr) or ns.CHESS_START_ELO)
+        end
+    end)
+end
+
+-- The opponent's U message, with their rating from before the duel
+function ns.OnDuelRating(sender, theirs)
+    if not theirs then return end
+    for opp in pairs(pendingDuels) do
+        if ns.SameName(opp, sender) then return ApplyDuelRating(opp, theirs) end
+    end
 end
 
 -- ---------------------------------------------------------------------------

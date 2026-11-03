@@ -31,14 +31,11 @@ local cache = { n = -1 }
 local function Now() return ns.Now() end
 
 -- Elo: everyone starts at 1200. Both players know both ratings from the
--- start of the game, so each side computes the same change on its own.
-local K = 32
+-- start of the game, so each side computes the same change on its own
+-- (K = 32, see ns.EloChange).
 function G.MyElo() return (ns.char and ns.char.stats.chessElo) or ns.CHESS_START_ELO end
 
-function G.EloChange(mine, theirs, score)
-    local expected = 1 / (1 + 10 ^ ((theirs - mine) / 400))
-    return math.floor(K * (score - expected) + 0.5)
-end
+function G.EloChange(mine, theirs, score) return ns.EloChange(mine, theirs, score) end
 local function Print(msg) ns.Print("|cffd8b26cchess:|r " .. msg) end
 
 function G.Current() return ns.char and ns.char.chess end

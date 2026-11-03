@@ -6,7 +6,8 @@
 --   E  id  ts  [flags]            sender just earned id (flags: a = posted in guild chat, f = guild first)
 --   S  d=1,w=2,...  rev           sender's death/duel counters (see ns.STAT_KEYS)
 --   K  n  ts  zone                sender died (their death number n)
---   U  winner  loser  fled  ts    a duel between guildmates (sent by both duelists)
+--   U  winner  loser  fled  ts  rating   a duel between guildmates (sent by both duelists,
+--                                 each with its own duel rating from before the duel)
 --
 --   W  winner  loser  how  plies  ts   a finished chess game (sent by both players)
 --   (whispered) C  ...                  chess between two players, see ChessGame.lua
@@ -408,6 +409,7 @@ function Comm.OnMessage(prefix, text, channel, sender)
         if not winner or not loser or not ts then return end
         if not (ns.SameName(sender, winner) or ns.SameName(sender, loser)) then return end -- only duelists report
         ns.AddDuelFeed(winner, loser, f[4] == "1", ts)
+        if ns.SameName(winner, ns.me) or ns.SameName(loser, ns.me) then ns.OnDuelRating(sender, tonumber(f[6])) end
         Refresh()
     elseif kind == "V" then
         lastAdvertSeen = GetTime()
