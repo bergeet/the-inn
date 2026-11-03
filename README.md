@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" width="128" alt="The Inn: a tankard of beer"></p>
+
 # The Inn
 
 **The Inn**: a WoW addon that turns your guild into a tavern, with achievements, a scoreboard and gossip shared between guildmates. It targets WoW: Forever (interface 16001) and Classic Era (11509).

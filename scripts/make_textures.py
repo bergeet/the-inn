@@ -628,6 +628,10 @@ def main():
         # Big wood textures don't need supersampling; edges of round things do.
         imgs[name] = render(w, h, shader, ss=1 if name in ("Wall", "Plank", "Chalkboard") else 3)
         save_tga(imgs[name], os.path.join(ROOT, name + ".tga"))
+        if name == "Icon":  # also as a PNG for the repo's README (GitHub doesn't show TGA)
+            docs = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs")
+            os.makedirs(docs, exist_ok=True)
+            save_png(imgs[name], os.path.join(docs, "icon.png"))
         print("wrote", name + ".tga", w, "x", h)
 
     if len(sys.argv) > 1:
