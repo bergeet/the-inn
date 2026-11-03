@@ -7,7 +7,7 @@
 --   stat         stat = counter name (see below), value = amount to reach
 --   boss         bosses = { "Encounter Name", ... }  (any one kill counts)
 --                encounters = { encounterID, ... }  (optional; works in every
---                client language. /gach debug prints the id of each fight.)
+--                client language. /inn debug prints the id of each fight.)
 --   prof_any     value = skill reached in any primary profession
 --   prof_count   value = skill, count = how many primary professions
 --   prof_skill   skillLine = id, skillName = name, value = skill
@@ -24,7 +24,7 @@
 local _, ns = ...
 local I = "Interface\\Icons\\"
 
-ns.CATEGORIES = { "Milestones", "Dungeons", "Raids", "Professions", "PvP", "Duels", "Together", "Shenanigans", "Shame", "Guild" }
+ns.CATEGORIES = { "Milestones", "Dungeons", "Raids", "Professions", "PvP", "Duels", "Together", "Shenanigans", "Chess", "Shame", "Guild" }
 
 local function boss(id, name, desc, bossName, points, icon)
     return { id = id, cat = "Dungeons", type = "boss", bosses = { bossName }, points = points or 10,
@@ -210,6 +210,25 @@ ns.STATIC = {
     event("bagsFull",     "Shenanigans", 5,  "Inventory Tetris Champion", "Fill every slot in your bags.", "INV_Misc_Bag_08", "Maybe sell some of that."),
     event("questLogFull", "Shenanigans", 10, "Overcommitted",             "Fill your quest log.",          "INV_Misc_Note_01"),
     stat("abandon10", "Shenanigans", "abandons", 10, 5, "Commitment Issues", "Abandon 10 quests.", "INV_Misc_Note_01"),
+
+    -- Tavern Chess (games against guildies; practice games don't count)
+    stat("chessWin1",   "Chess", "chessWins",   1,  5,  "Check, Please",            "Win a game of chess against a guildie.", "INV_Crown_01"),
+    stat("chessWin10",  "Chess", "chessWins",   10, 25, "Grandmaster of the Tavern", "Win 10 games of chess.",                "INV_Crown_01"),
+    stat("chessGames10","Chess", "chessGames",  10, 10, "Board Game Night",          "Play 10 games of chess.",               "INV_Misc_Book_09"),
+    stat("chessElo1400", "Chess", "chessEloPeak", 1400, 15, "Club Player",     "Reach a chess rating of 1400.", "INV_Crown_01"),
+    stat("chessElo1600", "Chess", "chessEloPeak", 1600, 25, "Tavern Champion", "Reach a chess rating of 1600.", "INV_Crown_01",
+         "Climb higher than anyone at the board."),
+    stat("chessLose5",  "Chess", "chessLosses", 5,  5,  "Pawn Sacrifice",            "Lose 5 games of chess. For the greater good.", "INV_Misc_Bone_HumanSkull_01"),
+    event("chessScholar",  "Chess", 15, "Scholar's Mate", "Checkmate a guildie within your first four moves.", "INV_Misc_Book_09",
+          "Some lessons are short."),
+    event("chessBoss",     "Chess", 15, "Checkmate, Boss", "Checkmate the Guild Master.", "INV_Crown_01",
+          "Someone at the top is about to have a bad game."),
+    event("chessResign",   "Chess", 5,  "Tipping the King", "Resign a game of chess.", "Ability_Rogue_FeignDeath"),
+    event("chessStalemate","Chess", 10, "Nobody Wins", "Draw a game by stalemate.", "Spell_Nature_Sleep",
+          "Win so hard you lose. Well, draw."),
+    event("chessPawnStar", "Chess", 5,  "Pawn Star", "Promote a pawn to a queen.", "INV_Crown_01"),
+    event("chessHorsing",  "Chess", 10, "Horsing Around", "Promote a pawn to a knight.", "Ability_Mount_RidingHorse",
+          "A queen is so predictable."),
 
     -- Shame: dying, mostly
     stat("death1",   "Shame", "deaths", 1,   5,  "Welcome to the Afterlife",                "Die for the first time. It gets easier.",            "Spell_Holy_Resurrection"),

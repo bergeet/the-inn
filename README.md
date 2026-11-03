@@ -11,7 +11,7 @@ TheInn/              the addon itself (this folder is what goes in Interface/Add
 tests/sim.lua        simulated WoW client + guild: timers, roster, addon channel, saved variables
 tests/run.lua        test suite, run against both the Forever and Classic Era API flavors
 scripts/package.sh   runs the tests, then zips the addon into dist/
-scripts/make_textures.py  draws the tavern and badge art (TheInn/Media/*.tga)
+scripts/make_textures.py  draws the tavern and achievement-alert art (TheInn/Media/*.tga)
 ```
 
 ## Develop

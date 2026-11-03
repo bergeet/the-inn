@@ -1,6 +1,6 @@
 # The Inn (WoW: Forever and Classic Era)
 
-Your guild's tavern, with your guild's name on the sign. Around 150 achievements (heroic ones, hidden ones and plenty of dark humor), leaderboards for glory and shame, an animated badge for every unlock, and the tavern gossip on who died where and who lost to whom. Everything syncs in game between guildmates running the addon. No external app needed.
+Your guild's tavern, with your guild's name on the sign. Around 150 achievements (heroic ones, hidden ones and plenty of dark humor), leaderboards for glory and shame, a classic gold achievement alert for every unlock, and the tavern gossip on who died where and who lost to whom. Everything syncs in game between guildmates running the addon. No external app needed.
 
 ## Install
 
@@ -14,15 +14,18 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 
 ## The tavern
 
-`/inn` (or `/gach`) opens the tavern. The sign over the door shows your guild's name (knock on it for a new joke), your **bar tab** (points) is on the right, and there are three rooms:
+`/inn` (or `/gach`) opens the tavern. The sign over the door shows your guild's name (knock on it for a new joke), your **bar tab** (points) is on the right, and there are four rooms:
 
 - **Trophy Wall**: your achievements as plaques, by category, with progress bars. Hover one to see which guildmates have it. Hidden ones show `???` and a hint until you earn them.
-- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, duels won, duels lost, guild duels (wins minus losses) and duels fled. Number one on each board gets a title. The duel boards also show your record against each guildmate.
+- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (wins minus losses) and duels fled. Number one on each board gets a title. The duel boards also show your record against each guildmate.
 - **Tavern Gossip**: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries and guild duel results. Deaths in the same place within a minute are grouped, so a raid wipe is one line.
+- **Chess**: the guildies online with the addon, with their rating and a Challenge button; your current game; and practice against the barkeep.
 
-Every unlock pops up a **badge**: a gold medallion with the achievement's icon, a ribbon with its name, the points on a coin and a shine across it. `/gach badge` shows a test one.
+**Tavern Chess.** The **Chess** tab lists the guildies online with the addon, with their rating and a Challenge button (or type `/inn chess <name>`); they get a popup to accept. The board opens for both of you, moves travel as hidden addon whispers, and a game survives logging out (it picks up where you left off when you're both online). Everyone has a rating (Elo, starting at 1200) that goes up and down with each game; the Chess scoreboard ranks by it. Win, lose or draw, it also goes into the gossip. Want to try it with nobody around? `/inn chess barkeep` plays the barkeep (a simple opponent), and `/inn chess solo` lets you move both sides. Practice games don't count.
 
-Your unlocks are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. `/gach announce off` turns that off.
+Every unlock shows an **achievement alert** at the bottom of the screen, in the style of the classic Wrath-era one: a gold-framed bar with the icon on the left, the points on a shield on the right, a gold flash and a shine. `/inn badge` shows a test one.
+
+Your unlocks are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. `/inn announce off` turns that off.
 
 ### What there is to earn
 
@@ -33,6 +36,7 @@ Your unlocks are also **posted in guild chat** (a burst of them becomes one line
 - **Duels**: wins, losses, fleeing, streaks, an arch-nemesis, beating the Guild Master, losing to a lowbie.
 - **Together**: a dungeon boss with five guildmates, a raid boss with ten, guild firsts, waving at and hugging guildmates, and bowing to (or spitting on) the Guild Master.
 - **Shenanigans**: jumps (up to 100,000), /dance, /chicken, /flex, fishing, Hearthstone, flights, looting greys, epics and legendaries, mounts, AFK, very long sessions, logging in at 3 in the morning, full bags, a full quest log, abandoning quests.
+- **Chess**: wins, games played, reaching a 1400 or 1600 rating, Scholar's Mate, checkmating the Guild Master, stalemates, promotions (and losing a few).
 - **Shame**: deaths (up to 250), bad days, dying rich, dying right after a ding, dying from falling, drowning or lava, being broke at level 40, being Hated by a faction.
 
 The first time you log in on a character, it quietly credits what you have already done (levels, gold, quests, professions, honorable kills, reputation). Deaths, duels, jumps and the other counters start when you install the addon.
@@ -42,24 +46,25 @@ Duels are read from the game's own "X has defeated Y in a duel" message, so a du
 Killing blows and deaths by falling, drowning or lava need the combat log. Classic Era gives that to addons. Forever runs on the newer engine, which hides combat data from addons, so if it doesn't provide them those just stay at zero. Honorable kills and PvP rank work on both.
 
 Commands:
-- `/gach stats` prints your deaths, jumps, duels and PvP record.
-- `/gach announce off|on` stops or starts posting your unlocks in guild chat.
-- `/gach toasts off` turns off the badge for your own unlocks. `/gach others off` does the same for guildmates' unlocks.
-- `/gach obits off` hides guildmates' deaths in the gossip. They still count on the scoreboard.
-- `/gach inn <name>` repaints the sign with a name of your choice; `/gach inn reset` puts the guild's name back.
-- `/gach badge` shows a test badge.
+- `/inn stats` prints your deaths, jumps, duels and PvP record.
+- `/inn announce off|on` stops or starts posting your unlocks in guild chat.
+- `/inn toasts off` turns off the alert for your own unlocks. `/inn others off` does the same for guildmates' unlocks.
+- `/inn obits off` hides guildmates' deaths in the gossip. They still count on the scoreboard.
+- `/inn inn <name>` repaints the sign with a name of your choice; `/inn inn reset` puts the guild's name back.
+- `/inn chess` opens the chess board. `/inn chess <name>` challenges someone, `/inn chess accept|decline` answers a challenge, `/inn chess resign|draw` ends a game, `/inn chess barkeep|solo` starts a practice game, and `/inn chess clear` puts a finished game away.
+- `/inn badge` shows a test achievement alert.
 
 ## Officers: custom achievements
 
 ```
-/gach create 15 Fishing Legend | Caught the big one in Stranglethorn
-/gach custom                      -- lists ids
-/gach grant Bob c6b49d5fe78
-/gach revoke Bob c6b49d5fe78
-/gach delete c6b49d5fe78
+/inn create 15 Fishing Legend | Caught the big one in Stranglethorn
+/inn custom                      -- lists ids
+/inn grant Bob c6b49d5fe78
+/inn revoke Bob c6b49d5fe78
+/inn delete c6b49d5fe78
 ```
 
-- "Officer" means guild rank index 0 or 1 by default (GM and the rank below). Change it with `/gach officerrank 2`. Everyone should use the same value, because each client checks the sender's rank itself.
+- "Officer" means guild rank index 0 or 1 by default (GM and the rank below). Change it with `/inn officerrank 2`. Everyone should use the same value, because each client checks the sender's rank itself.
 - Player names are matched against the guild roster, so `bob`, `Bob` and `Bob-Realm` all work.
 - Grants and revokes for offline players are delivered the next time they log in while an officer is online.
 - Officer commands only work on custom achievements. Built-in ones (levels, bosses, professions) can't be granted or revoked.
@@ -68,7 +73,7 @@ Commands:
 
 Edit `Data.lua`. Each entry needs a unique `id`. The supported types are listed at the top of the file.
 
-Boss achievements match the encounter name, for example `"Ragnaros"` (English clients), and raid bosses also match by encounter id, which works in every client language. To find the id for a new boss, turn on `/gach debug` and kill it: the addon prints `encounter 672 "Ragnaros" ended, success=1`. On Classic Era the addon also watches the combat log for the boss dying while you're inside an instance, in case a dungeon boss doesn't fire encounter events.
+Boss achievements match the encounter name, for example `"Ragnaros"` (English clients), and raid bosses also match by encounter id, which works in every client language. To find the id for a new boss, turn on `/inn debug` and kill it: the addon prints `encounter 672 "Ragnaros" ended, success=1`. On Classic Era the addon also watches the combat log for the boss dying while you're inside an instance, in case a dungeon boss doesn't fire encounter events.
 
 ## How saving and sync work
 
@@ -85,7 +90,7 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Known limits
 
-- **Not yet tested in the live client.** The logic is tested against a simulated WoW API (both the Forever and the Classic Era flavors) with several clients. Report any Lua errors with `/gach debug` on.
+- **Not yet tested in the live client.** The logic is tested against a simulated WoW API (both the Forever and the Classic Era flavors) with several clients. Report any Lua errors with `/inn debug` on.
 - **Professions:** read through the modern profession API on Forever, and from the Character > Skills list on Classic Era. If a skill header there is collapsed, the professions under it aren't seen until it's expanded again.
 - **Quests:** the count comes from the client's list of completed quests, which can include a few hidden ones, so it may run slightly ahead of what the quest log shows.
 - **Deaths and duels:** counted only from when the addon is installed. The feed only shows deaths and duels that happened while you (or someone online with you) were around; leaderboard totals catch up through sync either way.
@@ -93,12 +98,19 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.6.0**
+- Tavern Chess: challenge guildies from the new Chess tab (or `/inn chess <name>`), with an Elo rating, a Chess scoreboard, gossip and achievements. Practice against the barkeep or on your own with `/inn chess barkeep` and `/inn chess solo`.
+
+**0.5.0**
+- The achievement alert now looks like the classic Wrath-era one, and points on the Trophy Wall sit on the same shield.
+- "Regulars" are now "guildies".
+
 **0.4.2**
 - Licensed under MIT.
 
 **0.4.0**
-- The addon is now called **The Inn**. `/inn` opens it (`/gach` still works).
-- The sign shows your guild's name, sized to fit; `/gach inn` can still repaint it.
+- The addon is now called **The Inn**. `/inn` opens it (`/inn` still works).
+- The sign shows your guild's name, sized to fit; `/inn inn` can still repaint it.
 - Emote achievements (/dance, /chicken, /flex, /cry, /lol, hugs) are hidden until earned.
 - Fixed: a long guild name overlapped the text in the top-left corner. Removed the wall's nail heads, which looked like glitches next to text, and lightened the chalkboard.
 
@@ -128,9 +140,9 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - Fixed: on Classic Era, Cooking, Fishing or First Aid could count as a primary profession.
 - The send timer now stops when there is nothing to send.
 - Classic Era support: listed in the TOC (11509), and dungeon bosses are also detected from the combat log.
-- Raid bosses match by encounter id, so they work on non-English clients. `/gach debug` prints each encounter's id.
+- Raid bosses match by encounter id, so they work on non-English clients. `/inn debug` prints each encounter's id.
 
 ## Next steps
 
-- A Discord feed: with `/gach announce on` and `/chatlog` enabled, a small companion script can tail `Logs/WoWChatLog.txt` and forward unlocks to a Discord webhook.
+- A Discord feed: with `/inn announce on` and `/chatlog` enabled, a small companion script can tail `Logs/WoWChatLog.txt` and forward unlocks to a Discord webhook.
 - Guild-wide shared goals, a minimap button, and officer tools in the window.

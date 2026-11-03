@@ -3,7 +3,7 @@ local UI = {}
 ns.UI = UI
 
 -- The window is a tavern: plank walls, an inn sign hanging over the top
--- (the Mozarteum, unless you repaint it with /gach inn), achievements as
+-- (the Mozarteum, unless you repaint it with /inn inn), achievements as
 -- plaques on the Trophy Wall, the leaderboards chalked on a Scoreboard, and
 -- the feed as Tavern Gossip.
 
@@ -60,7 +60,7 @@ local TAGLINES = {
     "Your guildmates can read this wall, you know.",
 }
 
-local VERDICTS = { { 10, "New in town" }, { 30, "Regular" }, { 60, "Local legend" },
+local VERDICTS = { { 10, "New in town" }, { 30, "Familiar face" }, { 60, "Local legend" },
                    { 90, "Owns a stool here" }, { 101, "Please go home" } }
 
 local CAT_INFO = {
@@ -73,6 +73,7 @@ local CAT_INFO = {
     Duels       = { icon = ICONS .. "Ability_Warrior_Challange",     quip = "Settling bar arguments the honorable way." },
     Together    = { icon = ICONS .. "Spell_Holy_PrayerOfHealing",    quip = "Things you do with (or to) your guildmates." },
     Shenanigans = { icon = ICONS .. "Spell_Nature_Polymorph",        quip = "Nobody asked for these. You earned them anyway." },
+    Chess       = { icon = MEDIA .. "ChessWN",                     quip = "Tavern Chess against your guildies. /inn chess" },
     Shame       = { icon = ICONS .. "Ability_Rogue_FeignDeath",      quip = "Achievements you'd rather not talk about." },
     Guild       = { icon = ICONS .. "INV_Misc_Note_02",              quip = "Handed out by officers. Bribes not officially accepted." },
 }
@@ -102,6 +103,12 @@ local BOARDS = {
     { key = "rank", label = "PvP rank", icon = ICONS .. "INV_Crown_01", title = "Chain of Command", top = "Warlord of the Bar",
       sub = "Highest PvP rank reached.",
       value = function(m) return m.stats.pr or 0 end, text = RankText },
+    { key = "chess", label = "Chess", icon = MEDIA .. "ChessWK", title = "Tavern Chess", top = "Grandmaster of the Tavern",
+      sub = "Ranked by rating (Elo, everyone starts at 1200). Challenge someone from the Chess tab.",
+      value = function(m) return m.stats.ce or 1200 end,
+      show = function(m) return (m.stats.cw or 0) + (m.stats.cl or 0) + (m.stats.cd or 0) > 0 end,
+      text = function(m) return string.format("%s%d|r   %s%d|r W  %s%d|r L  %s%d|r D", GOLD, m.stats.ce or 1200, GREEN,
+                                              m.stats.cw or 0, RED, m.stats.cl or 0, GREY, m.stats.cd or 0) end },
     { key = "won", label = "Duels won", icon = ICONS .. "INV_Sword_04", title = "Bullies", top = "Schoolyard Bully", duel = true,
       sub = "Most duels won, against anyone.",
       value = function(m) return m.stats.w or 0 end },
@@ -123,6 +130,7 @@ local FEED_FILTERS = {
     { key = "ach",   label = "Unlocks",    icon = ICONS .. "INV_Misc_Gem_Pearl_04" },
     { key = "death", label = "Obituaries", icon = SKULL },
     { key = "duel",  label = "Duels",      icon = ICONS .. "Ability_Warrior_Challange" },
+    { key = "chess", label = "Chess",      icon = MEDIA .. "ChessWN" },
 }
 
 local OBITS = {
@@ -153,7 +161,6 @@ local SHAME_EARNED = {
     function(who, a) return string.format("%s unlocked %s. Dignity not included.", who, a) end,
     function(who, a) return string.format("%s got %s. The whole tavern saw.", who, a) end,
 }
-local BADGE_HEADERS = { "Achievement unlocked!", "Well done!", "Look at you go!", "Drinks are on you!" }
 local BADGE_SHAME = { "Achievement... unlocked?", "Nobody is proud of this.", "This goes on your permanent record." }
 
 -- ---------------------------------------------------------------------------
@@ -203,7 +210,7 @@ local function Ago(ts)
     return math.floor(d / 86400) .. "d ago"
 end
 
--- The sign shows the guild's name, unless someone repainted it with /gach inn
+-- The sign shows the guild's name, unless someone repainted it with /inn inn
 local function InnName()
     if ns.settings and ns.settings.innName then return ns.settings.innName end
     local g = ns.Guild and ns.Guild()
@@ -342,11 +349,11 @@ local function GetAchRow(i)
 
     -- Points on a gold coin
     r.coin = r:CreateTexture(nil, "ARTWORK")
-    r.coin:SetSize(32, 32)
-    r.coin:SetPoint("TOPRIGHT", -10, -3)
-    r.coin:SetTexture(MEDIA .. "BadgeCoin")
+    r.coin:SetSize(34, 34)
+    r.coin:SetPoint("TOPRIGHT", -12, -2)
+    r.coin:SetTexture(MEDIA .. "AlertShield")
     r.points = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    r.points:SetPoint("CENTER", r.coin, "CENTER", 0, 0)
+    r.points:SetPoint("CENTER", r.coin, "CENTER", 0, 2)
 
     r.status = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     r.status:SetPoint("BOTTOMRIGHT", -10, 6)
@@ -431,6 +438,11 @@ local function GetLine(i)
     l.right = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     l.right:SetPoint("RIGHT", -8, 0)
     l.right:SetJustifyH("RIGHT")
+    l.btn = CreateFrame("Button", nil, l, "UIPanelButtonTemplate")
+    l.btn:SetSize(96, 20)
+    l.btn:SetPoint("RIGHT", -6, 0)
+    l.btn:SetScript("OnClick", function(self) if self.onClick then self.onClick() end end)
+    l.btn:Hide()
     lineRows[i] = l
     return l
 end
@@ -453,6 +465,17 @@ local function SetLine(l, o)
     l.text:SetPoint("RIGHT", -(o.rightW or 110), 0)
     l.text:SetText(o.text or "")
     l.right:SetText(o.right or "")
+    l.right:ClearAllPoints()
+    if o.button then
+        l.btn:SetText(o.button)
+        l.btn.onClick = o.onClick
+        if o.disabled then l.btn:Disable() else l.btn:Enable() end
+        l.btn:Show()
+        l.right:SetPoint("RIGHT", l.btn, "LEFT", -8, 0)
+    else
+        l.btn:Hide()
+        l.right:SetPoint("RIGHT", -8, 0)
+    end
     if o.barFrac and o.barFrac > 0 then
         local c = o.barColor or { 0.95, 0.95, 0.88 } -- chalk
         l.bar:ClearAllPoints()
@@ -582,7 +605,7 @@ local function RenderAchievements()
     content:SetHeight(math.max(1, #list * ROW_H))
     if #list == 0 then
         SetLine(GetLine(1), { text = GREY .. "Nothing on this wall yet. Officers haven't invented any.|r" })
-        SetLine(GetLine(2), { text = GREY .. "Officers: /gach create 10 Name | description|r" })
+        SetLine(GetLine(2), { text = GREY .. "Officers: /inn create 10 Name | description|r" })
         content:SetHeight(2 * LINE_H)
     end
     SetHeader(category .. "  " .. GREY .. got .. " / " .. #list .. "|r", (CAT_INFO[category] or CAT_INFO.All).quip)
@@ -678,6 +701,12 @@ local function FeedText(e)
         return Pick(MASS, e.ts)(zone, NameList(whos, 3))
     elseif kind == "duel" then
         return Pick(e.fled and FLED or DUELS, e.ts)(ClassColored(e.who), ClassColored(e.loser))
+    elseif kind == "chess" then
+        local a, b, moves = ClassColored(e.who), ClassColored(e.loser), math.floor(((e.plies or 0) + 1) / 2)
+        if e.how == "checkmate" then return string.format("%s checkmated %s in %d moves.", a, b, moves) end
+        if e.how == "resign" then return string.format("%s tipped their king to %s.", b, a) end
+        if e.how == "stalemate" then return string.format("%s and %s stalemated. Nobody wins, everybody's tired.", a, b) end
+        return string.format("%s and %s called it a draw at the chess board.", a, b)
     end
     local d = ns.byId[e.id]
     local label = d and (GOLD .. "[" .. d.name .. "]|r") or (GREY .. "[removed]|r")
@@ -690,13 +719,14 @@ local function FeedIcon(e)
     local kind = FeedKind(e)
     if kind == "death" then return SKULL end
     if kind == "duel" then return ICONS .. (e.fled and "Ability_Rogue_Sprint" or "Ability_Warrior_Challange") end
+    if kind == "chess" then return MEDIA .. "ChessWK" end
     local d = ns.byId[e.id]
     return d and d.icon or QUESTION
 end
 
 local function RenderFeed()
     local g = ns.Guild()
-    local counts, visible = { all = 0, ach = 0, death = 0, duel = 0 }, {}
+    local counts, visible = { all = 0, ach = 0, death = 0, duel = 0, chess = 0 }, {}
     for _, e in ipairs(g and g.feed or {}) do
         local kind = FeedKind(e)
         if kind ~= "death" or ns.settings.obituaries then
@@ -710,7 +740,7 @@ local function RenderFeed()
                 function() feedFilter = ff.key end)
     end
     SetHeader("Tavern Gossip", ns.settings.obituaries and "Who earned what, who died where, who lost to whom."
-              or "Unlocks and duels. Obituaries are hidden (/gach obits on).")
+              or "Unlocks and duels. Obituaries are hidden (/inn obits on).")
 
     local n = 0
     local function line(o)
@@ -728,6 +758,81 @@ local function RenderFeed()
     if g then
         line({})
         line({ text = GREY .. "Only guildmates running the addon show up here.|r" })
+    end
+    content:SetHeight(math.max(1, n * LINE_H))
+end
+
+local function RenderChess()
+    local G = ns.ChessGame
+    local function Act(fn)
+        return function()
+            fn()
+            Render()
+        end
+    end
+    SetSide(1, MEDIA .. "ChessWK", "Open the board", nil, false, function() ns.ChessUI.Open() end)
+    SetSide(2, MEDIA .. "ChessBK", "Play the barkeep", nil, false, function() G.Practice("barkeep") end)
+    SetSide(3, MEDIA .. "ChessWN", "Practice board", nil, false, function() G.Practice("solo") end)
+    local s = ns.char.stats
+    SetHeader("Tavern Chess", string.format("Your rating: %s%d|r   %s%d|r W  %s%d|r L  %s%d|r D", GOLD, G.MyElo(), GREEN,
+              s.chessWins or 0, RED, s.chessLosses or 0, GREY, s.chessDraws or 0))
+
+    local n = 0
+    local function line(o)
+        n = n + 1
+        SetLine(GetLine(n), o)
+    end
+    local g = ns.Guild()
+    local game = G.Current()
+    local busy = game and game.mode == "guild" and not game.over
+
+    local inv = G.Invite()
+    if inv then
+        line({ icon = MEDIA .. "ChessWK", text = GOLD .. ClassColored(inv.from) .. " challenges you to a game!|r",
+               right = inv.elo and (GREY .. "rated " .. inv.elo .. "|r") or "", button = "Accept", onClick = Act(G.Accept) })
+    end
+    local pend = G.Pending()
+    if pend then line({ icon = MEDIA .. "ChessWK", text = "Waiting for " .. ClassColored(pend.to) .. " to answer..." }) end
+    if game and not game.over then
+        local who = game.mode == "guild" and ClassColored(game.opp) or (game.mode == "barkeep" and "the barkeep" or "yourself")
+        line({ icon = MEDIA .. "ChessW" .. (game.me == "b" and "Q" or "K"),
+               text = "Your game against " .. who .. (G.MyTurn() and (": " .. GREEN .. "your move|r") or ""),
+               button = "Open board", onClick = function() ns.ChessUI.Open() end })
+    end
+    if n > 0 then line({}) end
+
+    line({ text = GOLD .. "Guildies online with the addon|r" })
+    local players, others = {}, 0
+    for name, e in pairs(ns.roster) do
+        if e.online and not ns.SameName(name, ns.me) then
+            local m = g and g.members[name]
+            if m then players[#players + 1] = { name = name, m = m, e = e } else others = others + 1 end
+        end
+    end
+    table.sort(players, function(a, b)
+        local ra, rb = a.m.stats.ce or 1200, b.m.stats.ce or 1200
+        if ra ~= rb then return ra > rb end
+        return a.name < b.name
+    end)
+    for _, p in ipairs(players) do
+        local st = p.m.stats
+        local played = (st.cw or 0) + (st.cl or 0) + (st.cd or 0)
+        line({ icon = MEDIA .. "ChessBP",
+               text = ClassColored(p.name) .. GREY .. "  level " .. (p.e.level or "?") .. "|r",
+               right = played > 0 and string.format("%s%d|r  %d-%d-%d", GOLD, st.ce or 1200, st.cw or 0, st.cl or 0, st.cd or 0)
+                       or (GREY .. "unrated|r"),
+               button = "Challenge", disabled = busy or pend ~= nil,
+               onClick = Act(function() G.Challenge(p.name) end) })
+    end
+    if #players == 0 then
+        line({ text = GREY .. "Nobody with the addon is online. The barkeep is always up for a game.|r" })
+    end
+    if others > 0 then
+        line({ text = GREY .. string.format("+%d online without the addon. Peer pressure them.|r", others) })
+    end
+    if busy then
+        line({})
+        line({ text = GREY .. "Finish (or resign) your current game to challenge someone else.|r" })
     end
     content:SetHeight(math.max(1, n * LINE_H))
 end
@@ -758,8 +863,8 @@ local function RefreshHeader()
         for name in pairs(g.members) do
             if name ~= ns.me then others = others + 1 end
         end
-        f.regulars:SetText(others == 0 and "No other regulars yet" or
-                           string.format("%d regular%s with the addon", others, others == 1 and "" or "s"))
+        f.regulars:SetText(others == 0 and "No other guildies with the addon yet" or
+                           string.format("%d guild%s with the addon", others, others == 1 and "ie" or "ies"))
     else
         f.regulars:SetText("Drinking alone")
     end
@@ -778,6 +883,7 @@ Render = function()
     f.chalk:SetShown(view == "boards")
     if view == "ach" then RenderAchievements()
     elseif view == "boards" then RenderBoards()
+    elseif view == "chess" then RenderChess()
     else RenderFeed() end
 end
 
@@ -807,7 +913,7 @@ end
 
 local function MakeTab(def, x)
     local b = CreateFrame("Button", nil, f)
-    b:SetSize(170, TAB_H)
+    b:SetSize(162, TAB_H)
     b:SetPoint("TOPLEFT", x, -TAB_Y)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
@@ -889,7 +995,7 @@ local function Build()
     f.sign:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
     f.sign:SetScript("OnMouseUp", function() NewTagline() end) -- knock on the sign for another joke
 
-    -- Left of the sign: the crest, you (the patron), and the regulars
+    -- Left of the sign: the crest, you (the patron), and your guildies
     local LEFT_W = (W - SIGN_W) / 2 - 26
     local crest = Panel(f, nil, MEDIA .. "BadgeDisc", { 1, 1, 1, 1 }, C_GOLD, EDGE, 12)
     crest:SetSize(48, 48)
@@ -942,8 +1048,9 @@ local function Build()
         { key = "ach",    label = "Trophy Wall",   icon = ICONS .. "INV_Misc_Book_09" },
         { key = "boards", label = "Scoreboard",    icon = SKULL },
         { key = "feed",   label = "Tavern Gossip", icon = ICONS .. "INV_Misc_Note_01" },
+        { key = "chess",  label = "Chess",         icon = MEDIA .. "ChessWN" },
     }
-    for i, def in ipairs(tabDefs) do tabs[i] = MakeTab(def, 14 + (i - 1) * 176) end
+    for i, def in ipairs(tabDefs) do tabs[i] = MakeTab(def, 14 + (i - 1) * 168) end
 
     f.side = Panel(f, nil, MEDIA .. "Wall", { 0.55, 0.5, 0.45, 1 }, { 0.3, 0.2, 0.1 }, EDGE, 12)
     f.side:SetPoint("TOPLEFT", 14, -BODY_TOP)
@@ -989,13 +1096,14 @@ function UI._widgets()
 end
 
 -- ---------------------------------------------------------------------------
--- The badge: a gold medallion with the achievement's icon, a ribbon with
--- its name, the points on a coin, a shine sweeping across, and a pop.
+-- The achievement alert, in the style of the classic Wrath-era one: it fades
+-- in at the bottom of the screen, flashes gold, a shine sweeps across, it stays
+-- a few seconds and fades. Icon on the left, points on a shield on the right.
 -- ---------------------------------------------------------------------------
 
-local badge
-local badgeQueue = {}
-local badgeBusy = false
+local alert
+local alertQueue = {}
+local alertBusy = false
 
 local function Anim(group, kind, order, duration, delay)
     local a = group:CreateAnimation(kind)
@@ -1005,156 +1113,130 @@ local function Anim(group, kind, order, duration, delay)
     return a
 end
 
-local function BuildBadge()
-    badge = CreateFrame("Frame", "TheInnBadge", UIParent)
-    badge:SetSize(460, 130)
-    badge:SetPoint("TOP", 0, -150)
-    badge:SetFrameStrata("DIALOG")
-    badge:Hide()
+local ALERT_W, ALERT_H = 400, 100
 
-    -- Ribbon to the right of the medallion, clipped so the shine stays on it
-    badge.ribbon = CreateFrame("Frame", nil, badge)
-    badge.ribbon:SetSize(380, 96)
-    badge.ribbon:SetPoint("LEFT", 70, 0)
-    pcall(badge.ribbon.SetClipsChildren, badge.ribbon, true)
-    badge.banner = badge.ribbon:CreateTexture(nil, "BACKGROUND")
-    badge.banner:SetAllPoints()
-    badge.banner:SetTexture(MEDIA .. "BadgeBanner")
-    badge.glint = badge.ribbon:CreateTexture(nil, "ARTWORK")
-    badge.glint:SetSize(40, 96)
-    badge.glint:SetPoint("LEFT", 40, 0)
-    badge.glint:SetTexture(MEDIA .. "BadgeGlint")
-    badge.glint:SetBlendMode("ADD")
-    badge.glint:SetAlpha(0)
+local function BuildAlert()
+    alert = CreateFrame("Frame", "TheInnAlert", UIParent)
+    alert:SetSize(ALERT_W, ALERT_H)
+    alert:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 190)
+    alert:SetFrameStrata("DIALOG")
+    alert:Hide()
 
-    badge.header = badge.ribbon:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    badge.header:SetPoint("TOPLEFT", 70, -22)
-    badge.name = badge.ribbon:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    badge.name:SetPoint("TOPLEFT", badge.header, "BOTTOMLEFT", 0, -3)
-    badge.name:SetWidth(270)
-    badge.name:SetJustifyH("LEFT")
-    badge.name:SetWordWrap(false)
-    badge.name:SetShadowColor(0, 0, 0, 1)
-    badge.name:SetShadowOffset(1, -1)
-    badge.sub = badge.ribbon:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    badge.sub:SetPoint("TOPLEFT", badge.name, "BOTTOMLEFT", 0, -3)
-    badge.sub:SetWidth(270)
-    badge.sub:SetJustifyH("LEFT")
-    badge.sub:SetWordWrap(false)
-    badge.sub:SetTextColor(0.92, 0.85, 0.7)
+    alert.glow = alert:CreateTexture(nil, "BACKGROUND")
+    alert.glow:SetPoint("CENTER", 0, 0)
+    alert.glow:SetSize(ALERT_W * 1.08, ALERT_H * 1.08)
+    alert.glow:SetTexture(MEDIA .. "AlertGlow")
+    alert.glow:SetBlendMode("ADD")
+    alert.glow:SetAlpha(0)
 
-    -- The medallion, in its own frame so it can pop
-    badge.medal = CreateFrame("Frame", nil, badge)
-    badge.medal:SetSize(130, 130)
-    badge.medal:SetPoint("LEFT", 0, 0)
-    badge.medal:SetFrameLevel(badge.ribbon:GetFrameLevel() + 2)
-    badge.glow = badge.medal:CreateTexture(nil, "BACKGROUND")
-    badge.glow:SetSize(190, 190)
-    badge.glow:SetPoint("CENTER", 0, 0)
-    badge.glow:SetTexture(MEDIA .. "BadgeGlow")
-    badge.glow:SetBlendMode("ADD")
-    badge.disc = badge.medal:CreateTexture(nil, "BORDER")
-    badge.disc:SetAllPoints()
-    badge.disc:SetTexture(MEDIA .. "BadgeDisc")
-    badge.icon = badge.medal:CreateTexture(nil, "ARTWORK")
-    badge.icon:SetPoint("CENTER", 0, 0)
-    -- Round the icon off with a mask where the client supports it; otherwise
-    -- show it smaller, so its corners stay inside the ring.
-    local masked = false
-    if badge.medal.CreateMaskTexture and badge.icon.AddMaskTexture then
-        masked = pcall(function()
-            local mask = badge.medal:CreateMaskTexture()
-            mask:SetTexture(MEDIA .. "BadgeMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-            mask:SetAllPoints(badge.icon)
-            badge.icon:AddMaskTexture(mask)
-        end)
-    end
-    if masked then badge.icon:SetSize(94, 94) else badge.icon:SetSize(64, 64) end
-    badge.ring = badge.medal:CreateTexture(nil, "OVERLAY")
-    badge.ring:SetAllPoints()
-    badge.ring:SetTexture(MEDIA .. "BadgeRing")
+    -- The frame art (clipped so the shine stays inside it)
+    alert.body = CreateFrame("Frame", nil, alert)
+    alert.body:SetAllPoints()
+    pcall(alert.body.SetClipsChildren, alert.body, true)
+    alert.bg = alert.body:CreateTexture(nil, "BORDER")
+    alert.bg:SetAllPoints()
+    alert.bg:SetTexture(MEDIA .. "AlertFrame")
+    alert.glint = alert.body:CreateTexture(nil, "ARTWORK")
+    alert.glint:SetSize(36, 70)
+    alert.glint:SetPoint("LEFT", 60, -8)
+    alert.glint:SetTexture(MEDIA .. "BadgeGlint")
+    alert.glint:SetBlendMode("ADD")
+    alert.glint:SetAlpha(0)
 
-    badge.coin = CreateFrame("Frame", nil, badge.medal)
-    badge.coin:SetSize(44, 44)
-    badge.coin:SetPoint("BOTTOMRIGHT", 4, 2)
-    badge.coin:SetFrameLevel(badge.medal:GetFrameLevel() + 2)
-    badge.coin.tex = badge.coin:CreateTexture(nil, "ARTWORK")
-    badge.coin.tex:SetAllPoints()
-    badge.coin.tex:SetTexture(MEDIA .. "BadgeCoin")
-    badge.points = badge.coin:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    badge.points:SetPoint("CENTER", 0, 0)
+    -- Icon in its gold square, on the left
+    alert.icon = alert.body:CreateTexture(nil, "ARTWORK")
+    alert.icon:SetSize(46, 46)
+    alert.icon:SetPoint("LEFT", 36, -9)
+    alert.iconFrame = alert.body:CreateTexture(nil, "OVERLAY")
+    alert.iconFrame:SetSize(58, 58)
+    alert.iconFrame:SetPoint("CENTER", alert.icon, "CENTER", 0, 0)
+    alert.iconFrame:SetTexture(MEDIA .. "AlertIconFrame")
 
-    -- Fade in, stay, fade out
-    local main = badge:CreateAnimationGroup()
+    -- Points on a shield, on the right
+    alert.shield = alert.body:CreateTexture(nil, "ARTWORK")
+    alert.shield:SetSize(56, 56)
+    alert.shield:SetPoint("RIGHT", -30, -9)
+    alert.shield:SetTexture(MEDIA .. "AlertShield")
+    alert.points = alert.body:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    alert.points:SetPoint("CENTER", alert.shield, "CENTER", 0, 3)
+    alert.points:SetTextColor(1, 1, 1)
+    alert.points:SetShadowColor(0, 0, 0, 1)
+    alert.points:SetShadowOffset(1, -1)
+
+    -- "Achievement Earned" on the tab, the name in the middle
+    alert.header = alert.body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    alert.header:SetPoint("TOP", 0, -11)
+    alert.name = alert.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    alert.name:SetPoint("CENTER", 0, -6)
+    alert.name:SetWidth(ALERT_W - 190)
+    alert.name:SetShadowColor(0, 0, 0, 1)
+    alert.name:SetShadowOffset(1, -1)
+    alert.sub = alert.body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    alert.sub:SetPoint("TOP", alert.name, "BOTTOM", 0, -3)
+    alert.sub:SetWidth(ALERT_W - 190)
+    alert.sub:SetWordWrap(false)
+
+    -- Rise into place and fade in, stay, fade out
+    local main = alert:CreateAnimationGroup()
     local fadeIn = Anim(main, "Alpha", 1, 0.25)
     fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(1)
     local hold = Anim(main, "Alpha", 2, 4.5)
     hold:SetFromAlpha(1); hold:SetToAlpha(1)
-    local fadeOut = Anim(main, "Alpha", 3, 0.8)
+    local fadeOut = Anim(main, "Alpha", 3, 1.0)
     fadeOut:SetFromAlpha(1); fadeOut:SetToAlpha(0)
     main:SetScript("OnFinished", function()
-        badge:Hide()
-        if badge.pulse then badge.pulse:Stop() end
-        badgeBusy = false
+        alert:Hide()
+        alertBusy = false
         UI.NextToast()
     end)
-    badge.anim = main
+    alert.anim = main
 
-    -- The medallion pops: grows past full size, then settles
-    local pop = badge.medal:CreateAnimationGroup()
-    pcall(function()
-        local grow = Anim(pop, "Scale", 1, 0.18)
-        grow:SetScaleFrom(0.4, 0.4); grow:SetScaleTo(1.15, 1.15)
-        local settle = Anim(pop, "Scale", 2, 0.12)
-        settle:SetScaleFrom(1.15, 1.15); settle:SetScaleTo(1, 1)
-    end)
-    badge.pop = pop
+    -- The gold flash around the frame
+    local flash = alert.glow:CreateAnimationGroup()
+    local up = Anim(flash, "Alpha", 1, 0.2, 0.15)
+    up:SetFromAlpha(0); up:SetToAlpha(1)
+    local down = Anim(flash, "Alpha", 2, 0.9)
+    down:SetFromAlpha(1); down:SetToAlpha(0)
+    alert.flash = flash
 
-    -- A shine sweeps across the ribbon
-    local shine = badge.glint:CreateAnimationGroup()
-    local move = Anim(shine, "Translation", 1, 0.9, 0.35)
-    move:SetOffset(300, 0)
-    local on = Anim(shine, "Alpha", 1, 0.25, 0.35)
-    on:SetFromAlpha(0); on:SetToAlpha(1)
+    -- A shine sweeping across
+    local shine = alert.glint:CreateAnimationGroup()
+    local move = Anim(shine, "Translation", 1, 0.85, 0.4)
+    move:SetOffset(260, 0)
+    local on = Anim(shine, "Alpha", 1, 0.2, 0.4)
+    on:SetFromAlpha(0); on:SetToAlpha(0.9)
     local off = Anim(shine, "Alpha", 1, 0.35, 0.9)
-    off:SetFromAlpha(1); off:SetToAlpha(0)
-    badge.shine = shine
-
-    -- The glow breathes while the badge is up
-    local pulse = badge.glow:CreateAnimationGroup()
-    pcall(pulse.SetLooping, pulse, "BOUNCE")
-    local breathe = Anim(pulse, "Alpha", 1, 0.9)
-    breathe:SetFromAlpha(0.35); breathe:SetToAlpha(0.9)
-    badge.pulse = pulse
+    off:SetFromAlpha(0.9); off:SetToAlpha(0)
+    alert.shine = shine
 end
 
 function UI.NextToast()
-    if badgeBusy or #badgeQueue == 0 then return end
-    if not badge then BuildBadge() end
-    local item = table.remove(badgeQueue, 1)
+    if alertBusy or #alertQueue == 0 then return end
+    if not alert then BuildAlert() end
+    local item = table.remove(alertQueue, 1)
     local d, who, first = item.d, item.who, item.first
     local shame = d.cat == "Shame"
-    badgeBusy = true
-    badge.icon:SetTexture(d.icon or QUESTION)
-    if shame then badge.banner:SetVertexColor(0.75, 0.5, 0.5) else badge.banner:SetVertexColor(1, 1, 1) end
+    alertBusy = true
+    alert.icon:SetTexture(d.icon or QUESTION)
+    if shame then alert.bg:SetVertexColor(1, 0.75, 0.72) else alert.bg:SetVertexColor(1, 1, 1) end
     local header
-    if who then
-        header = ClassColored(who) .. GREY .. " earned|r"
+    if first then
+        header = "Guild First!"
+    elseif who then
+        header = ns.BaseName(who) .. " Earned"
     elseif shame then
         header = BADGE_SHAME[math.random(#BADGE_SHAME)]
     else
-        header = BADGE_HEADERS[math.random(#BADGE_HEADERS)]
+        header = "Achievement Earned"
     end
-    if first then header = header .. "  " .. GOLD .. "GUILD FIRST!|r" end
-    badge.header:SetText(header)
-    badge.name:SetText(d.name)
-    badge.sub:SetText(d.desc or "")
-    badge.points:SetText(tostring(d.points or 0))
-    badge:Show()
-    badge.anim:Play()
-    badge.pop:Play()
-    badge.shine:Play()
-    badge.pulse:Play()
+    alert.header:SetText(header)
+    alert.name:SetText(d.name)
+    alert.sub:SetText(who and "" or (d.desc or ""))
+    alert.points:SetText(tostring(d.points or 0))
+    alert:Show()
+    alert.anim:Play()
+    alert.flash:Play()
+    alert.shine:Play()
     if ns.settings.sound and not who then pcall(PlaySound, 888) end -- level-up fanfare
 end
 
@@ -1162,14 +1244,14 @@ end
 function UI.Toast(d, who, first)
     if who and not ns.settings.othersToasts then return end
     if not who and not ns.settings.toasts then return end
-    if #badgeQueue > 5 then return end
-    badgeQueue[#badgeQueue + 1] = { d = d, who = who, first = first }
+    if #alertQueue > 5 then return end
+    alertQueue[#alertQueue + 1] = { d = d, who = who, first = first }
     UI.NextToast()
     UI.Refresh()
 end
 
--- /gach badge: preview the badge
+-- /inn badge: preview the alert
 function UI.TestBadge()
     local d = ns.byId.dieQuick or ns.defs[1]
-    UI.Toast(d, nil, true)
+    UI.Toast(d, nil, false)
 end

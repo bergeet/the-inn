@@ -8,6 +8,9 @@
 --   K  n  ts  zone                sender died (their death number n)
 --   U  winner  loser  fled  ts    a duel between guildmates (sent by both duelists)
 --
+--   W  winner  loser  how  plies  ts   a finished chess game (sent by both players)
+--   (whispered) C  ...                  chess between two players, see ChessGame.lua
+--
 -- Relay, so guildmates who are never online at the same time still see
 -- each other's progress:
 --   V  name:rev,name:rev,...      what the sender knows about offline members
@@ -49,9 +52,9 @@ local lastRefill = GetTime()
 local blockedUntil = 0
 local ticker
 
-local function TrySend(msg)
+local function TrySend(item)
     if not (C_ChatInfo and C_ChatInfo.SendAddonMessage) then return true end
-    local ok, res = pcall(C_ChatInfo.SendAddonMessage, PREFIX, msg, "GUILD")
+    local ok, res = pcall(C_ChatInfo.SendAddonMessage, PREFIX, item.msg, item.channel or "GUILD", item.target)
     if not ok then return false end
     if res == nil or res == true or res == 0 then return true end
     if Enum and Enum.SendAddonMessageResult and res == Enum.SendAddonMessageResult.Success then return true end
@@ -65,7 +68,7 @@ local function Pump()
     if now < blockedUntil then return end
     while tokens >= 1 and queue[1] do
         local item = queue[1]
-        if TrySend(item.msg) then
+        if TrySend(item) then
             table.remove(queue, 1)
             tokens = tokens - 1
         else
@@ -82,9 +85,9 @@ local function Pump()
     end
 end
 
-local function Enqueue(msg)
-    if not (IsInGuild and IsInGuild()) then return end
-    queue[#queue + 1] = { msg = msg, tries = 0 }
+local function Enqueue(msg, channel, target)
+    if not channel and not (IsInGuild and IsInGuild()) then return end
+    queue[#queue + 1] = { msg = msg, tries = 0, channel = channel, target = target }
     if not ticker then ticker = C_Timer.NewTicker(0.3, Pump) end
 end
 
@@ -92,6 +95,13 @@ function Comm.Send(...)
     local parts = { ... }
     for i = 1, #parts do parts[i] = tostring(parts[i]) end
     Enqueue(ns.Utf8Truncate(table.concat(parts, SEP), 255))
+end
+
+-- An addon message to one player (used for chess moves).
+function Comm.Whisper(target, ...)
+    local parts = { ... }
+    for i = 1, #parts do parts[i] = tostring(parts[i]) end
+    Enqueue(ns.Utf8Truncate(table.concat(parts, SEP), 255), "WHISPER", target)
 end
 
 Comm._queue = queue -- for tests
@@ -349,7 +359,7 @@ function Comm.ProcessPending()
 end
 
 function Comm.OnMessage(prefix, text, channel, sender)
-    if prefix ~= PREFIX or channel ~= "GUILD" then return end
+    if prefix ~= PREFIX or (channel ~= "GUILD" and channel ~= "WHISPER") then return end
     if ns.IsSecret(text) or ns.IsSecret(sender) then return end
     if not ns.Guild() or not ns.me then return end
     sender = ns.NormalizeName(sender)
@@ -358,6 +368,16 @@ function Comm.OnMessage(prefix, text, channel, sender)
     local f = Split(text)
     local kind = f[1]
     local g = ns.Guild()
+
+    -- Whispers carry chess moves and nothing else
+    if channel == "WHISPER" then
+        if kind == "C" and ns.ChessGame then ns.ChessGame.OnMessage(sender, f) end
+        return
+    end
+    if kind == "W" then -- a chess result, for the gossip and the scoreboard
+        if ns.ChessGame then ns.ChessGame.OnResult(sender, f) end
+        return
+    end
 
     if kind == "H" then
         ns.Member(g, sender).lastSeen = ns.Now()

@@ -670,6 +670,235 @@ test("emote achievements are hidden until earned", function()
     end
 end)
 
+-- ---------------------------------------------------------------------------
+-- Tavern Chess
+-- ---------------------------------------------------------------------------
+
+local function ChessRules()
+    local ns = {}
+    assert(loadfile(Sim.ADDON_DIR .. "/Chess.lua"))("TheInn", ns)
+    return ns.Chess
+end
+
+test("chess rules: perft counts, notation, endings", function()
+    local C = ChessRules()
+    local start = C.New()
+    eq(C.Perft(start, 1), 20); eq(C.Perft(start, 2), 400); eq(C.Perft(start, 3), 8902)
+    local kiwi = C.FromFEN("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
+    eq(C.Perft(kiwi, 1), 48); eq(C.Perft(kiwi, 2), 2039) -- castling, en passant, promotions, pins
+    -- Fool's mate
+    local s, san, outcome = C.Replay({ "f2f3", "e7e5", "g2g4", "d8h4" })
+    eq(outcome, "checkmate"); eq(san[4], "Qh4#"); eq(s.turn, "w", "white is mated")
+    -- Notation: castling, en passant, promotion, disambiguation
+    _, san = C.Replay({ "e2e4", "d7d5", "e4e5", "f7f5", "e5f6", "g8f6", "g1f3", "b8c6", "f1e2", "c8f5", "e1g1" })
+    eq(san[5], "exf6"); eq(san[11], "O-O")
+    eq(C.SAN(C.FromFEN("4k3/1P6/8/8/8/8/8/4K3 w - - 0 1"), C.FindMove(C.FromFEN("4k3/1P6/8/8/8/8/8/4K3 w - - 0 1"), "b7b8q")), "b8=Q+")
+    local twoKnights = C.FromFEN("4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1")
+    eq(C.SAN(twoKnights, C.FindMove(twoKnights, "b1d2")), "Nbd2")
+    -- Stalemate, repetition, insufficient material
+    eq(C.Outcome(C.FromFEN("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1")), "stalemate")
+    _, _, outcome = C.Replay({ "g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8" })
+    eq(outcome, "repetition")
+    eq(C.Outcome(C.FromFEN("8/8/4k3/8/8/3NK3/8/8 b - - 0 1")), "insufficient")
+    -- Illegal moves are refused
+    eq(C.FindMove(start, "e2e5"), nil); eq(C.FindMove(start, "e1e2"), nil)
+    eq(select(4, C.Replay({ "e2e4", "e2e4" })), 2, "replay stops at the illegal move")
+end)
+
+local function ChessPair()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob, p.cid)
+    p.ana:Slash("chess Bob")
+    w:Advance(1)
+    ok(p.bob:LogHas("challenges you to a game of chess"), "Bob gets the challenge")
+    p.bob:Slash("chess accept")
+    w:Advance(1)
+    local ga, gb = p.ana.ns.ChessGame.Current(), p.bob.ns.ChessGame.Current()
+    ok(ga and gb and ga.id == gb.id, "same game on both sides")
+    ok(ga.me ~= gb.me, "opposite colors")
+    local white, black = ga.me == "w" and p.ana or p.bob, ga.me == "w" and p.bob or p.ana
+    return w, p, white, black
+end
+
+local function Play(w, c, uci)
+    local okMove = c.ns.ChessGame.Move(uci)
+    w:Advance(1)
+    return okMove
+end
+
+test("chess between guildies: moves, checkmate, stats, gossip", function()
+    local w, p, white, black = ChessPair()
+    ok(not Play(w, black, "e7e5"), "black can't move first")
+    ok(Play(w, white, "f2f3")); ok(Play(w, black, "e7e5"))
+    ok(Play(w, white, "g2g4")); ok(Play(w, black, "d8h4"))
+    local gw, gb = white.ns.ChessGame.Current(), black.ns.ChessGame.Current()
+    ok(gw.over and gb.over, "both see the game end")
+    eq(gw.winner, "b"); eq(gw.how, "checkmate")
+    eq(black.ns.char.stats.chessWins, 1); eq(white.ns.char.stats.chessLosses, 1)
+    ok(black:Earned("chessWin1") and black:Earned("chessScholar"), "Check, Please and Scholar's Mate")
+    w:Advance(8)
+    local n = 0
+    for _, e in ipairs(p.cid:Guild().feed) do if e.kind == "chess" then n = n + 1 end end
+    eq(n, 1, "Cid hears about it once")
+    eq(p.cid:ViewOf(black).stats.cw, 1, "the Chess scoreboard")
+    Clean(w)
+end)
+
+test("chess rating: Elo changes, both sides agree, ratings can go down", function()
+    local w, p, white, black = ChessPair()
+    eq(white.ns.ChessGame.Current().oppElo, 1200, "ratings exchanged at the start")
+    Play(w, white, "f2f3"); Play(w, black, "e7e5"); Play(w, white, "g2g4"); Play(w, black, "d8h4")
+    eq(black.ns.char.stats.chessElo, 1216, "equal ratings: the winner gains 16")
+    eq(white.ns.char.stats.chessElo, 1184, "and the loser drops 16")
+    w:Advance(10)
+    eq(p.cid:ViewOf(white).stats.ce, 1184, "Cid's scoreboard takes the lower rating")
+    eq(p.cid:ViewOf(black).stats.ce, 1216)
+    -- A rematch uses the new ratings: the favourite gains less for winning again
+    white:Slash("chess clear"); black:Slash("chess clear")
+    black:Slash("chess " .. white.name)
+    w:Advance(1)
+    white:Slash("chess accept")
+    w:Advance(1)
+    eq(white.ns.ChessGame.Current().oppElo, 1216)
+    white:Slash("chess resign")
+    w:Advance(2)
+    eq(black.ns.char.stats.chessElo, 1216 + white.ns.ChessGame.EloChange(1216, 1184, 1))
+    ok(black.ns.char.stats.chessElo - 1216 < 16, "less for beating a lower-rated player")
+    Clean(w)
+end)
+
+test("chess tab: challenge an online guildie with a click", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob)
+    p.ana:Slash("")
+    local ui = p.ana.ns.UI._widgets()
+    ui.tabs[4]:Click()
+    local function FindButton(c, label)
+        for _, l in ipairs(c.ns.UI._widgets().lines) do
+            if l:IsShown() and l.btn:IsShown() and l.btn:GetText() == label then return l end
+        end
+    end
+    local row = FindButton(p.ana, "Challenge")
+    ok(row and row.text:GetText():find("Bob", 1, true), "Bob is listed with a Challenge button")
+    row.btn:Click()
+    w:Advance(1)
+    p.bob:Slash("")
+    p.bob.ns.UI._widgets().tabs[4]:Click()
+    local accept = FindButton(p.bob, "Accept")
+    ok(accept, "Bob sees the challenge in his Chess tab")
+    accept.btn:Click()
+    w:Advance(1)
+    ok(p.ana.ns.ChessGame.Current() and p.bob.ns.ChessGame.Current(), "the game started")
+    w:Advance(1)
+    ok(FindButton(p.ana, "Open board"), "Ana's tab now shows her game")
+    Clean(w)
+end)
+
+test("chess: illegal, out-of-turn and forged moves are ignored", function()
+    local w, p, white, black = ChessPair()
+    local id = white.ns.ChessGame.Current().id
+    -- Black's addon is "tampered" and whispers a move on white's turn, and an illegal one
+    black.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t1\te7e5", "WHISPER", white.name)
+    black.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t1\te2e5", "WHISPER", white.name)
+    -- Cid, not in this game, tries to move for black
+    Play(w, white, "e2e4")
+    p.cid.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t2\te7e5", "WHISPER", white.name)
+    w:Advance(1)
+    eq(#white.ns.ChessGame.Current().moves, 1, "only white's real move counts")
+    Clean(w)
+end)
+
+test("chess: a move made while the opponent was offline arrives when they're back", function()
+    local w, p, white, black = ChessPair()
+    Play(w, white, "e2e4")
+    black:Logout() -- a relog keeps the game
+    black:Login()
+    w:Advance(12)
+    eq(#black.ns.ChessGame.Current().moves, 1, "the saved game is still there")
+    Play(w, black, "e7e5")
+    white:Logout()
+    w:Advance(5)
+    Play(w, black, "g8f6") -- not black's turn: refused
+    eq(#black.ns.ChessGame.Current().moves, 2)
+    white:Login()
+    w:Advance(80)
+    eq(#white.ns.ChessGame.Current().moves, 2, "white catches up on black's move")
+    ok(Play(w, white, "g1f3"))
+    eq(#black.ns.ChessGame.Current().moves, 3)
+    Clean(w)
+end)
+
+test("chess: resigning and draws", function()
+    local w, p, white, black = ChessPair()
+    Play(w, white, "e2e4")
+    white:Slash("chess draw")
+    w:Advance(1)
+    ok(black.ns.ChessGame.DrawOffered(), "black sees the offer")
+    black:Slash("chess draw") -- accepts
+    w:Advance(2)
+    ok(white.ns.ChessGame.Current().over and not white.ns.ChessGame.Current().winner, "a draw")
+    eq(white.ns.char.stats.chessDraws, 1)
+    white:Slash("chess clear")
+    black:Slash("chess clear")
+    white:Slash("chess Bob")
+    w:Advance(1)
+    black:Slash("chess accept")
+    w:Advance(1)
+    black:Slash("chess resign")
+    w:Advance(2)
+    ok(white.ns.ChessGame.Current().over, "white sees the resignation")
+    ok(black:Earned("chessResign"), "Tipping the King")
+    eq(white.ns.char.stats.chessWins, 1)
+    Clean(w)
+end)
+
+test("chess practice: the barkeep plays a whole game, nothing counts", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob:Slash("chess barkeep")
+    local G = p.bob.ns.ChessGame
+    local C = p.bob.ns.Chess
+    for _ = 1, 300 do
+        local g = G.Current()
+        if g.over then break end
+        local s = G.State()
+        if s.turn == g.me then
+            local moves = C.LegalMoves(s)
+            G.Move(C.ToUCI(moves[math.random(#moves)]))
+        end
+        w:Advance(1)
+    end
+    local g = G.Current()
+    ok(#g.moves > 4, "a game was played (" .. #g.moves .. " plies, " .. tostring(g.how) .. ")")
+    eq(p.bob.ns.char.stats.chessGames or 0, 0, "practice doesn't count")
+    -- Solo board: you move both sides
+    p.bob:Slash("chess clear")
+    p.bob:Slash("chess solo")
+    ok(G.Move("e2e4") and G.Move("e7e5"), "both colors from one client")
+    Clean(w)
+end)
+
+test("chess board: clicking pieces, legal-move dots, promotion", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob:Slash("chess solo")
+    local ui = p.bob.ns.ChessUI._widgets()
+    local C = p.bob.ns.Chess
+    local function Click(name) ui.squares[C.Parse(name)]:Click() end
+    Click("e2"); Click("e4")
+    eq(p.bob.ns.ChessGame.Current().moves[1], "e2e4", "click a pawn, click its square")
+    Click("e7"); Click("e6") -- black's turn in solo
+    eq(#p.bob.ns.ChessGame.Current().moves, 2)
+    -- A position where a pawn promotes
+    p.bob.ns.char.chess.moves = { "a2a4", "b7b5", "a4b5", "a7a6", "b5a6", "c8b7", "a6b7", "h7h6" }
+    Click("b7"); Click("a8")
+    ok(ui.promo:IsShown(), "the promotion picker opens")
+    ui.promo.buttons[4]:Click() -- knight
+    local moves = p.bob.ns.ChessGame.Current().moves
+    eq(moves[#moves], "b7a8n")
+    Clean(w)
+end)
+
 test("the badge, the tavern and every board render", function()
     local w, p = Guild()
     LoginAll(w, p.ana, p.bob)
@@ -996,7 +1225,7 @@ test("slash command help and settings", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
     p.bob:Slash("help")
-    ok(p.bob:LogHas("/gach create"))
+    ok(p.bob:LogHas("/inn create"))
     p.bob:Slash("toasts off")
     eq(p.bob.ns.settings.toasts, false)
     p.bob:Slash("others off")

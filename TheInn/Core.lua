@@ -77,7 +77,7 @@ local DEFAULT_SETTINGS = {
     sound = true,
     officerRank = 1,      -- guild rank index 0 (GM) .. N; this and lower count as officers
     obituaries = true,    -- show guildmates' deaths in the feed
-    -- innName: set by /gach inn to override the sign; the guild name otherwise
+    -- innName: set by /inn inn to override the sign; the guild name otherwise
 }
 
 -- Counters kept per character (see Data.lua for what each one means)
@@ -345,6 +345,23 @@ function ns.AddDuelFeed(winner, loser, fled, ts)
     InsertFeed(g, { kind = "duel", who = winner, loser = loser, fled = fled and true or false, ts = ts })
 end
 
+-- A finished chess game between guildies. Both players report it; keep one.
+-- For a draw, winner/loser are just the two players.
+function ns.AddChessFeed(winner, loser, how, plies, ts)
+    local g = ns.Guild()
+    if not g then return end
+    for i = 1, #g.feed do
+        local e = g.feed[i]
+        if e.ts < ts - 300 then break end
+        if e.kind == "chess" and math.abs(e.ts - ts) <= 120 and
+           ((ns.SameName(e.who, winner) and ns.SameName(e.loser, loser)) or
+            (ns.SameName(e.who, loser) and ns.SameName(e.loser, winner))) then
+            return
+        end
+    end
+    InsertFeed(g, { kind = "chess", who = winner, loser = loser, how = how, plies = plies, ts = ts })
+end
+
 -- Record that a member has an achievement. Returns true if it was new.
 -- relayed: heard from a third party, so don't count it as seeing them.
 function ns.ApplyEarned(who, id, ts, relayed)
@@ -364,7 +381,12 @@ end
 -- Short keys used on the guild channel -> character stat fields. These are
 -- the counters guildmates see on the leaderboards.
 ns.STAT_KEYS = { d = "deaths", w = "duelsWon", l = "duelsLost", f = "duelsFled", gw = "gDuelsWon", gl = "gDuelsLost",
-                 j = "jumps", hk = "hk", dk = "dk", kb = "killingBlows", pr = "pvpRank" }
+                 j = "jumps", hk = "hk", dk = "dk", kb = "killingBlows", pr = "pvpRank",
+                 cw = "chessWins", cl = "chessLosses", cd = "chessDraws", ce = "chessElo" }
+-- Counters only go up, so merging keeps the highest value. A chess rating
+-- can drop, so for these the newest value (by the member's rev) wins.
+ns.OVERWRITE_STATS = { ce = true }
+ns.CHESS_START_ELO = 1200
 ns.SHARED_FIELDS = {}
 for k, field in pairs(ns.STAT_KEYS) do ns.SHARED_FIELDS[field] = k end
 
@@ -408,6 +430,7 @@ end
 function ns.SharedStats()
     local out = {}
     for k, field in pairs(ns.STAT_KEYS) do out[k] = ns.char.stats[field] or 0 end
+    out.ce = ns.char.stats.chessElo or ns.CHESS_START_ELO
     return out
 end
 
@@ -419,7 +442,13 @@ function ns.ApplyStats(who, values, rev)
     local m = ns.Member(g, who)
     for k in pairs(ns.STAT_KEYS) do
         local v = tonumber(values[k])
-        if v and v > (m.stats[k] or 0) then m.stats[k] = v end
+        if v and ns.OVERWRITE_STATS[k] then
+            -- Newest wins: a direct update with a rev at least as new, or a relayed
+            -- value when we know nothing yet.
+            if (rev and rev >= m.rev) or m.stats[k] == nil then m.stats[k] = v end
+        elseif v and v > (m.stats[k] or 0) then
+            m.stats[k] = v
+        end
     end
     if rev and rev > m.rev then m.rev = rev end
 end
@@ -824,6 +853,7 @@ local function Startup()
     FirstScan()
     ns.scanned = true
     if ns.Trackers then pcall(ns.Trackers.OnStartup) end
+    if ns.ChessGame then pcall(ns.ChessGame.Start) end
     if g then
         if ns.Comm then ns.Comm.Hello() end
     elseif IsInGuild and IsInGuild() then
@@ -1072,7 +1102,7 @@ end
 function ns.Revoke(target, id)
     if not RequireOfficer() then return end
     if not ns.IsCustomId(id) then
-        ns.Print("only custom guild achievements can be revoked. /gach custom lists their ids.")
+        ns.Print("only custom guild achievements can be revoked. /inn custom lists their ids.")
         return
     end
     target = ResolveTarget(target, "revoke")
@@ -1142,7 +1172,7 @@ end
 
 function handlers.ENCOUNTER_END(encounterID, encounterName, _, _, success)
     if IsSecret(success) then return end
-    -- /gach debug shows each encounter, to help add ids for new bosses
+    -- /inn debug shows each encounter, to help add ids for new bosses
     if ns.debug and not IsSecret(encounterID) and not IsSecret(encounterName) then
         ns.Print(string.format("encounter %s \"%s\" ended, success=%s",
             tostring(encounterID), tostring(encounterName), tostring(success)))
@@ -1216,23 +1246,24 @@ end
 
 local HELP = {
     "/inn (or /gach) - open or close the window",
-    "/gach sync - ask online guildmates to resend their data",
-    "/gach announce on|off - also post your unlocks in guild chat",
-    "/gach toasts on|off - pop-ups for your unlocks",
-    "/gach others on|off - pop-ups for guildmates' unlocks",
-    "/gach obits on|off - guildmates' deaths in the feed",
-    "/gach stats - your deaths, jumps, duels and PvP record",
-    "/gach inn <name> - repaint the tavern sign (reset: back to the guild name)",
-    "/gach badge - show a test achievement badge",
-    "/gach announce on|off is on by default: your unlocks go to guild chat",
+    "/inn sync - ask online guildmates to resend their data",
+    "/inn announce on|off - also post your unlocks in guild chat",
+    "/inn toasts on|off - pop-ups for your unlocks",
+    "/inn others on|off - pop-ups for guildmates' unlocks",
+    "/inn obits on|off - guildmates' deaths in the feed",
+    "/inn stats - your deaths, jumps, duels and PvP record",
+    "/inn inn <name> - repaint the tavern sign (reset: back to the guild name)",
+    "/inn chess <name> - challenge a guildie to chess (/inn chess opens the board)",
+    "/inn chess barkeep | solo - practice against the barkeep, or play both sides",
+    "/inn badge - show a test achievement alert",
     "Officers:",
-    "/gach create <points> <name> | <description>",
-    "/gach grant <player> <id>    /gach revoke <player> <id>",
-    "/gach delete <id>    /gach custom - list custom ids",
-    "/gach officerrank <n> - ranks 0..n count as officers (default 1)",
+    "/inn create <points> <name> | <description>",
+    "/inn grant <player> <id>    /inn revoke <player> <id>",
+    "/inn delete <id>    /inn custom - list custom ids",
+    "/inn officerrank <n> - ranks 0..n count as officers (default 1)",
 }
 
-SLASH_GUILDACHIEVEMENTS1 = "/gach"
+SLASH_GUILDACHIEVEMENTS1 = "/inn"
 SLASH_GUILDACHIEVEMENTS2 = "/guildach"
 SLASH_GUILDACHIEVEMENTS3 = "/inn"
 SlashCmdList.GUILDACHIEVEMENTS = function(msg)
@@ -1262,13 +1293,25 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
             st.deaths, st.bestDayDeaths, st.jumps or 0, st.duelsWon, st.duelsLost, st.duelsFled, st.gDuelsWon, st.gDuelsLost))
         ns.Print(string.format("PvP: %d honorable kills, %d killing blows, highest rank %d.",
             st.hk or 0, st.killingBlows or 0, st.pvpRank or 0))
+    elseif cmd == "chess" then
+        local G = ns.ChessGame
+        local arg = rest:lower()
+        if arg == "" then ns.ChessUI.Toggle()
+        elseif arg == "barkeep" or arg == "bot" then G.Practice("barkeep")
+        elseif arg == "solo" then G.Practice("solo")
+        elseif arg == "accept" then G.Accept()
+        elseif arg == "decline" then G.Decline()
+        elseif arg == "resign" then G.Resign()
+        elseif arg == "draw" then G.OfferDraw()
+        elseif arg == "clear" then G.Clear()
+        else G.Challenge(rest) end
     elseif cmd == "badge" then
         if ns.UI then ns.UI.TestBadge() end
     elseif cmd == "inn" then
         local name = ns.Clean(rest, 32)
         if name:lower() == "reset" then s.innName = nil elseif name ~= "" then s.innName = name end
         ns.Print("the tavern sign reads: " .. (ns.UI and ns.UI.InnName() or s.innName or "?")
-                 .. (s.innName and " (/gach inn reset for the guild name)" or ""))
+                 .. (s.innName and " (/inn inn reset for the guild name)" or ""))
         if ns.UI then ns.UI.Refresh() end
     elseif cmd == "others" then
         s.othersToasts = OnOff(rest, s.othersToasts); ns.Print("guildmate pop-ups " .. (s.othersToasts and "on" or "off"))
@@ -1279,14 +1322,14 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
     elseif cmd == "create" then
         if not ns.ready then ns.Print("still loading, try again in a few seconds.") return end
         local points, body = rest:match("^(%d+)%s+(.+)$")
-        if not points then ns.Print("usage: /gach create <points> <name> | <description>") return end
+        if not points then ns.Print("usage: /inn create <points> <name> | <description>") return end
         -- the chat box turns "|" into "||", so accept either
         local name, desc = body:match("^(.-)%s*|+%s*(.*)$")
         ns.CreateCustom(points, name or body, desc or "")
     elseif cmd == "grant" or cmd == "revoke" then
         if not ns.ready then ns.Print("still loading, try again in a few seconds.") return end
         local target, id = rest:match("^(%S+)%s+(%S+)$")
-        if not target then ns.Print("usage: /gach " .. cmd .. " <player> <id>") return end
+        if not target then ns.Print("usage: /inn " .. cmd .. " <player> <id>") return end
         if cmd == "grant" then ns.Grant(target, id) else ns.Revoke(target, id) end
     elseif cmd == "delete" then
         if not ns.ready then ns.Print("still loading, try again in a few seconds.") return end
@@ -1303,6 +1346,6 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
     elseif cmd == "debug" then
         ns.debug = not ns.debug; ns.Print("debug " .. (ns.debug and "on" or "off"))
     else
-        ns.Print("unknown command. Try /gach help")
+        ns.Print("unknown command. Try /inn help")
     end
 end

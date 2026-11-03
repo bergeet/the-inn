@@ -336,19 +336,231 @@ def chalkboard(u, v):
     return tuple(clamp(c + smudge + dust) for c in slate) + (1.0,)
 
 
+# ---------------------------------------------------------------------------
+# Achievement alert, in the style of the classic (Wrath-era) one: a dark bar
+# with a gold frame, the icon in a gold square, the points on a shield.
+# ---------------------------------------------------------------------------
+
+
+def round_rect_dist(x, y, cx, cy, hw, hh, r):
+    """Signed distance to a rounded rectangle (negative inside)."""
+    qx, qy = abs(x - cx) - hw + r, abs(y - cy) - hh + r
+    out = math.hypot(max(qx, 0), max(qy, 0))
+    return out + min(max(qx, qy), 0) - r
+
+
+ALERT_BODY = (256, 70, 244, 44, 16)  # cx, cy, half width, half height, corner radius (512x128 texture)
+ALERT_TAB = (256, 22, 92, 13, 8)
+
+
+def alert_frame(u, v):
+    x, y = u * 512, v * 128
+    cx, cy, hw, hh, r = ALERT_BODY
+    d = round_rect_dist(x, y, cx, cy, hw, hh, r)
+    tcx, tcy, thw, thh, tr = ALERT_TAB
+    dt = round_rect_dist(x, y, tcx, tcy, thw, thh, tr)
+    border = 7
+    if dt <= 0:  # the tab on top, for "Achievement Earned"
+        inset = -dt
+        if inset < 4:
+            return gold_bevel(inset / 4, 0, -1 if y < tcy else 1) + (1.0,)
+        return mix((0.10, 0.07, 0.04), (0.05, 0.03, 0.02), (y - (tcy - thh)) / (2 * thh)) + (1.0,)
+    if d > 0:
+        return (0, 0, 0, 0)
+    inset = -d
+    if inset < border:  # gold frame, beveled
+        ny = -1 if y < cy else 1
+        nx = -1 if x < cx else 1
+        return gold_bevel(inset / border, nx * 0.3, ny) + (1.0,)
+    if inset < border + 1.5:
+        return (0.05, 0.03, 0.02, 1.0)
+    # Body: dark stone, a little lighter at the top, with faint texture
+    t = (y - (cy - hh)) / (2 * hh)
+    base = mix((0.20, 0.18, 0.16), (0.07, 0.06, 0.05), t)
+    n = (fbm(x * 0.05, y * 0.05, 3, 61) - 0.5) * 0.06
+    return tuple(clamp(c + n) for c in base) + (0.97,)
+
+
+def alert_glow(u, v):
+    x, y = u * 512, v * 128
+    cx, cy, hw, hh, r = ALERT_BODY
+    d = round_rect_dist(x, y, cx, cy, hw, hh, r)
+    a = clamp(1 - abs(d) / 18) ** 2
+    return (1.0, 0.85, 0.35, a)
+
+
+def shield(u, v):
+    """A heater shield: flat top, straight sides, curving to a point."""
+    x, y = (u - 0.5) * 2, v
+    top, bottom, shoulder, half = 0.06, 0.96, 0.42, 0.78
+    if y < top or y > bottom:
+        return (0, 0, 0, 0)
+    if y <= shoulder:
+        w = half
+    else:
+        t = (y - shoulder) / (bottom - shoulder)
+        w = half * math.sqrt(max(0.0, 1 - t ** 1.6))
+    if abs(x) > w:
+        return (0, 0, 0, 0)
+    edge = min(w - abs(x), y - top)
+    rim = 0.13
+    if edge < rim:
+        return gold_bevel(edge / rim, -1 if x < 0 else 1, -1 if y < 0.5 else 1) + (1.0,)
+    if edge < rim + 0.025:
+        return (0.18, 0.10, 0.03, 1.0)
+    # Field: deep bronze, lit from the top left
+    shade = clamp(0.75 - x * 0.25 - (y - 0.3) * 0.5)
+    return mix((0.22, 0.12, 0.04), (0.55, 0.36, 0.12), shade) + (1.0,)
+
+
+def icon_frame(u, v):
+    """A square gold frame for an icon, open in the middle."""
+    x, y = u * 128, v * 128
+    d = round_rect_dist(x, y, 64, 64, 60, 60, 8)
+    if d > 0:
+        return (0, 0, 0, 0)
+    inset = -d
+    if inset > 12:
+        return (0, 0, 0, 0)
+    if inset > 10:
+        return (0.06, 0.04, 0.02, 1.0)
+    return gold_bevel(inset / 10, -1 if x < 64 else 1, -1 if y < 64 else 1) + (1.0,)
+
+
+# ---------------------------------------------------------------------------
+# Chess pieces: silhouettes built from simple shapes (signed distances, so
+# the outline comes for free), ivory for white and ebony for black.
+# ---------------------------------------------------------------------------
+
+
+def sd_circle(x, y, cx, cy, r):
+    return math.hypot(x - cx, y - cy) - r
+
+
+def sd_box(x, y, cx, cy, hw, hh, r=0.0):
+    return round_rect_dist(x, y, cx, cy, hw, hh, r)
+
+
+def sd_poly(x, y, pts):
+    d, inside = 1e9, False
+    n = len(pts)
+    for i in range(n):
+        ax, ay = pts[i]
+        bx, by = pts[(i + 1) % n]
+        ex, ey = bx - ax, by - ay
+        t = clamp(((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey))
+        d = min(d, math.hypot(x - ax - ex * t, y - ay - ey * t))
+        if (ay > y) != (by > y) and x < ax + (y - ay) * ex / (by - ay):
+            inside = not inside
+    return -d if inside else d
+
+
+def sd_segment(x, y, ax, ay, bx, by):
+    ex, ey = bx - ax, by - ay
+    t = clamp(((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey))
+    return math.hypot(x - ax - ex * t, y - ay - ey * t)
+
+
+def base(x, y):
+    return min(sd_box(x, y, 0.5, 0.87, 0.30, 0.055, 0.03), sd_box(x, y, 0.5, 0.79, 0.22, 0.03, 0.01))
+
+
+def body(x, y, top, hw_top, hw_bottom=0.15):
+    return sd_poly(x, y, [(0.5 - hw_bottom, 0.78), (0.5 + hw_bottom, 0.78), (0.5 + hw_top, top), (0.5 - hw_top, top)])
+
+
+def pawn(x, y):
+    return min(base(x, y), body(x, y, 0.47, 0.06, 0.16), sd_box(x, y, 0.5, 0.48, 0.13, 0.025, 0.01),
+               sd_circle(x, y, 0.5, 0.33, 0.13)), []
+
+
+def rook(x, y):
+    top = sd_box(x, y, 0.5, 0.29, 0.21, 0.08, 0.01)
+    for cx in (0.40, 0.60):  # crenels
+        top = max(top, -sd_box(x, y, cx, 0.22, 0.035, 0.05))
+    return min(base(x, y), sd_box(x, y, 0.5, 0.56, 0.15, 0.22, 0.01), top), []
+
+
+def bishop(x, y):
+    mitre = min(sd_circle(x, y, 0.5, 0.40, 0.155), sd_poly(x, y, [(0.37, 0.36), (0.63, 0.36), (0.5, 0.15)]))
+    shape = min(base(x, y), body(x, y, 0.55, 0.07, 0.15), sd_box(x, y, 0.5, 0.57, 0.14, 0.025, 0.01),
+                mitre, sd_circle(x, y, 0.5, 0.135, 0.045))
+    return shape, [((0.45, 0.29), (0.57, 0.42))]  # the slit
+
+
+def knight(x, y):
+    head = sd_poly(x, y, [(0.70, 0.78), (0.72, 0.52), (0.69, 0.33), (0.61, 0.21), (0.57, 0.09), (0.50, 0.17),
+                          (0.41, 0.20), (0.27, 0.35), (0.21, 0.46), (0.27, 0.53), (0.38, 0.49), (0.47, 0.50),
+                          (0.37, 0.66), (0.32, 0.78)])
+    return min(base(x, y), head), [("eye", 0.44, 0.31, 0.022), ((0.62, 0.24), (0.66, 0.50))]  # eye, mane
+
+
+def queen(x, y):
+    crown = sd_poly(x, y, [(0.25, 0.27), (0.35, 0.47), (0.40, 0.22), (0.50, 0.44), (0.60, 0.22), (0.65, 0.47),
+                           (0.75, 0.27), (0.67, 0.62), (0.33, 0.62)])
+    balls = min(sd_circle(x, y, 0.25, 0.25, 0.045), sd_circle(x, y, 0.40, 0.20, 0.045),
+                sd_circle(x, y, 0.60, 0.20, 0.045), sd_circle(x, y, 0.75, 0.25, 0.045))
+    return min(base(x, y), body(x, y, 0.60, 0.11, 0.15), crown, balls), []
+
+
+def king(x, y):
+    cross = min(sd_box(x, y, 0.5, 0.15, 0.028, 0.09), sd_box(x, y, 0.5, 0.14, 0.08, 0.028))
+    head = min(sd_circle(x, y, 0.5, 0.40, 0.165), sd_box(x, y, 0.5, 0.27, 0.05, 0.04))
+    return min(base(x, y), body(x, y, 0.55, 0.11, 0.15), head, cross), []
+
+
+PIECES = {"K": king, "Q": queen, "R": rook, "B": bishop, "N": knight, "P": pawn}
+
+
+def piece_shader(shape, white):
+    def shader(u, v):
+        d, lines = shape(u, v)
+        if d > 0:
+            # A soft shadow just outside, so pieces read on both square colors
+            a = clamp(1 - d / 0.035) * 0.35
+            return (0, 0, 0, a)
+        inset = -d
+        outline = 0.028
+        if white:
+            fill = mix((0.98, 0.95, 0.86), (0.72, 0.64, 0.52), clamp(0.2 + (u - 0.4) * 0.9 + (v - 0.3) * 0.5))
+            edge = (0.18, 0.11, 0.06)
+        else:
+            fill = mix((0.38, 0.28, 0.22), (0.10, 0.07, 0.06), clamp(0.2 + (u - 0.4) * 0.9 + (v - 0.3) * 0.5))
+            edge = (0.82, 0.66, 0.40)  # a gold rim so black reads on dark squares
+        if inset < outline:
+            return edge + (1.0,)
+        for line in lines:
+            if line[0] == "eye":
+                if math.hypot(u - line[1], v - line[2]) < line[3]:
+                    return edge + (1.0,)
+            elif sd_segment(u, v, line[0][0], line[0][1], line[1][0], line[1][1]) < 0.016:
+                return edge + (1.0,)
+        return fill + (1.0,)
+    return shader
+
+
+def dot(u, v):
+    _, _, r = polar(u, v)
+    return (1.0, 1.0, 1.0, clamp((1 - r) * 3))
+
+
 TEXTURES = [
     ("Wall", 512, 512, wall),
     ("Plank", 512, 64, plank),
     ("Sign", 512, 256, sign),
     ("Chalkboard", 512, 256, chalkboard),
-    ("BadgeRing", 256, 256, ring),
     ("BadgeDisc", 128, 128, disc),
-    ("BadgeMask", 128, 128, mask),
-    ("BadgeGlow", 128, 128, glow),
-    ("BadgeCoin", 64, 64, coin),
-    ("BadgeBanner", 512, 128, banner),
     ("BadgeGlint", 64, 128, glint),
+    ("AlertFrame", 512, 128, alert_frame),
+    ("AlertGlow", 512, 128, alert_glow),
+    ("AlertShield", 128, 128, shield),
+    ("AlertIconFrame", 128, 128, icon_frame),
+    ("ChessDot", 64, 64, dot),
 ]
+for _color in ("w", "b"):
+    for _kind, _shape in PIECES.items():
+        TEXTURES.append(("Chess" + _color.upper() + _kind, 128, 128, piece_shader(_shape, _color == "w")))
+
 
 
 def composite(dst, src, ox, oy, sw, sh, add=False, alpha=1.0):
@@ -378,21 +590,28 @@ def main():
         print("wrote", name + ".tga", w, "x", h)
 
     if len(sys.argv) > 1:
-        # Rough preview of the assembled badge on a dark background (the
-        # in-game version adds the icon, text and animation).
-        W, H = 520, 160
+        # Rough preview of the alert (the game adds the icon, text and animation)
+        W, H = 560, 170
         out = [[(0.05, 0.05, 0.06, 1.0)] * W for _ in range(H)]
-        composite(out, imgs["BadgeBanner"], 70, 26, 420, 105)
-        composite(out, imgs["BadgeGlow"], -10, -10, 180, 180, add=True, alpha=0.45)
-        composite(out, imgs["BadgeDisc"], 20, 20, 120, 120)
+        composite(out, imgs["AlertGlow"], 10, 10, 540, 150, add=True, alpha=0.5)
+        composite(out, imgs["AlertFrame"], 30, 25, 500, 125)
         icon = [[(0.25 + 0.5 * x / 63, 0.45, 0.85 - 0.5 * y / 63, 1.0) for x in range(64)] for y in range(64)]
-        icon_masked = [[icon[y][x][:3] + (imgs["BadgeMask"][y * 2][x * 2][3],) for x in range(64)] for y in range(64)]
-        composite(out, icon_masked, 37, 37, 86, 86)
-        composite(out, imgs["BadgeRing"], 20, 20, 120, 120)
-        composite(out, imgs["BadgeCoin"], 102, 104, 40, 40)
-        composite(out, imgs["BadgeGlint"], 300, 20, 40, 120, add=True, alpha=0.6)
+        composite(out, icon, 64, 74, 56, 56)
+        composite(out, imgs["AlertIconFrame"], 56, 66, 72, 72)
+        composite(out, imgs["AlertShield"], 440, 66, 72, 72)
+        composite(out, imgs["BadgeGlint"], 300, 50, 40, 100, add=True, alpha=0.6)
         save_png(out, sys.argv[1])
         print("preview", sys.argv[1])
+        # Chess pieces on board squares
+        B = [[(0.0, 0.0, 0.0, 1.0)] * 480 for _ in range(160)]
+        for i in range(12):
+            col, row = i % 6, i // 6
+            light = (col + row) % 2 == 0
+            sq = [[((0.86, 0.72, 0.52) if light else (0.52, 0.33, 0.18)) + (1.0,)] * 80 for _ in range(80)]
+            composite(B, sq, col * 80, row * 80, 80, 80)
+            name = "Chess" + ("W" if row == 0 else "B") + "KQRBNP"[col]
+            composite(B, imgs[name], col * 80 + 4, row * 80 + 4, 72, 72)
+        save_png(B, sys.argv[1].replace(".png", "_chess.png"))
         # And the tavern pieces side by side
         T = [[(0.0, 0.0, 0.0, 1.0)] * 760 for _ in range(560)]
         composite(T, imgs["Wall"], 0, 0, 760, 560)

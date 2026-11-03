@@ -368,7 +368,8 @@ function Client:BuildEnv()
     env.SlashCmdList = {}
     env.UISpecialFrames = {}
     env.RAID_CLASS_COLORS = setmetatable({}, { __index = function() return { colorStr = "ffffffff" } end })
-    env.PlaySound = function() end
+    client.sounds = {}
+    env.PlaySound = function(id) client.sounds[#client.sounds + 1] = id end
     env.Enum = { SendAddonMessageResult = Sim.SEND_RESULT }
     if world.secretMode then
         env.issecretvalue = function(v) return world.secret[v] == true end
@@ -581,17 +582,26 @@ function Client:BuildEnv()
             client.prefixes[prefix] = true
             return 0
         end,
-        SendAddonMessage = function(prefix, msg, chatType)
+        SendAddonMessage = function(prefix, msg, chatType, target)
             if type(msg) ~= "string" or #msg > 255 or msg:find("\0", 1, true) or not IsUtf8(msg) then
                 world.violations[#world.violations + 1] = client.name .. " sent an invalid message: " .. tostring(msg)
                 return Sim.SEND_RESULT.InvalidMessage
             end
-            if chatType ~= "GUILD" then return Sim.SEND_RESULT.InvalidChatType end
+            if chatType ~= "GUILD" and chatType ~= "WHISPER" then return Sim.SEND_RESULT.InvalidChatType end
             if world.sendResult ~= Sim.SEND_RESULT.Success then
                 if world.flavor == "era" then return false end
                 return world.sendResult
             end
             client.sent[#client.sent + 1] = msg
+            if chatType == "WHISPER" then
+                local to = world.byName[(target or ""):match("^([^-]+)")]
+                if to and to.online and to.prefixes[prefix] then
+                    world:After(to, world.latency, function()
+                        to:Fire("CHAT_MSG_ADDON", prefix, msg, "WHISPER", client.fullName, to.fullName, 0, 0, "", 0)
+                    end)
+                end
+                return world.flavor == "era" and true or Sim.SEND_RESULT.Success
+            end
             world:Deliver(client, prefix, msg, chatType)
             if world.flavor == "era" then return true end
             return Sim.SEND_RESULT.Success
