@@ -45,12 +45,12 @@ Duels are read from the game's own "X has defeated Y in a duel" message, so a du
 
 Killing blows and deaths by falling, drowning or lava need the combat log. Classic Era gives that to addons. Forever runs on the newer engine, which hides combat data from addons, so if it doesn't provide them those just stay at zero. Honorable kills and PvP rank work on both.
 
-Commands:
+**Settings**: the button at the bottom of the sidebar opens a page with on/off buttons for guild chat posts, alerts, obituaries and sounds. The same things work as commands:
+
 - `/inn stats` prints your deaths, jumps, duels and PvP record.
 - `/inn announce off|on` stops or starts posting your unlocks in guild chat.
 - `/inn toasts off` turns off the alert for your own unlocks. `/inn others off` does the same for guildmates' unlocks.
 - `/inn obits off` hides guildmates' deaths in the gossip. They still count on the scoreboard.
-- `/inn inn <name>` repaints the sign with a name of your choice; `/inn inn reset` puts the guild's name back.
 - `/inn chess` opens the chess board. `/inn chess <name>` challenges someone, `/inn chess accept|decline` answers a challenge, `/inn chess resign|draw` ends a game, `/inn chess barkeep|solo` starts a practice game, and `/inn chess clear` puts a finished game away.
 - `/inn badge` shows a test achievement alert.
 
@@ -98,6 +98,10 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.6.3**
+- A Settings page (button at the bottom of the sidebar) with on/off buttons for guild chat posts, alerts, obituaries and sounds.
+- A minimap button (the beer): left-click opens the tavern, right-click the chess board, drag to move it.
+
 **0.6.2**
 - `/gach` works again next to `/inn` (0.6.0 accidentally registered `/inn` twice instead).
 - Custom achievements, whose names officers write, are no longer posted in guild chat from the recipient's character.
@@ -118,7 +122,7 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 **0.4.0**
 - The addon is now called **The Inn**. `/inn` opens it (`/inn` still works).
-- The sign shows your guild's name, sized to fit; `/inn inn` can still repaint it.
+- The sign shows your guild's name, sized to fit; `/inn sign` can still repaint it.
 - Emote achievements (/dance, /chicken, /flex, /cry, /lol, hugs) are hidden until earned.
 - Fixed: a long guild name overlapped the text in the top-left corner. Removed the wall's nail heads, which looked like glitches next to text, and lightened the chalkboard.
 

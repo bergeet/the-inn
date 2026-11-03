@@ -385,6 +385,8 @@ function Client:BuildEnv()
         return f
     end
     env.UIParent = NewWidget(client, "Frame", "UIParent")
+    env.Minimap = NewWidget(client, "Frame", "Minimap")
+    env.GetCursorPosition = function() return 0, 0 end
     env.GameTooltip = NewWidget(client, "GameTooltip", "GameTooltip")
     env.GameTooltip:Hide()
     env.IsInRaid = function() return st.raid ~= nil or st.inRaid == true end

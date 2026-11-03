@@ -167,6 +167,34 @@ test("unlocks are posted in guild chat: batched, throttled, never retro", functi
     Clean(w)
 end)
 
+test("settings page: buttons switch each option", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob:Slash("")
+    local ui = p.bob.ns.UI._widgets()
+    ui.settings:Click()
+    local function Row(label)
+        for _, l in ipairs(ui.lines) do
+            if l:IsShown() and (l.text:GetText() or ""):find(label, 1, true) then return l end
+        end
+    end
+    local s = p.bob.ns.settings
+    local before = { s.announce, s.toasts, s.othersToasts, s.obituaries, s.sound }
+    for _, label in ipairs({ "guild chat", "alert for my unlocks", "guildies' unlocks", "deaths in the gossip", "Play sounds" }) do
+        local row = Row(label)
+        ok(row and row.btn:IsShown(), label .. " has a button")
+        row.btn:Click()
+    end
+    local after = { s.announce, s.toasts, s.othersToasts, s.obituaries, s.sound }
+    for i = 1, 5 do ok(after[i] == not (before[i] ~= false), "setting " .. i .. " switched") end
+    -- The minimap button can be hidden
+    local mini = Row("minimap button")
+    ok(mini and p.bob.env.TheInnMinimapButton:IsShown(), "minimap button shown by default")
+    mini.btn:Click()
+    ok(not p.bob.env.TheInnMinimapButton:IsShown(), "and hidden from Settings")
+    Clean(w)
+end)
+
 test("slash commands: /inn and /gach both work", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
@@ -693,20 +721,12 @@ test("shame metas and being broke", function()
     Clean(w)
 end)
 
-test("the sign shows the guild name unless repainted", function()
+test("the sign shows the guild's name", function()
     local w, p = Guild()
-    p.bob.saved.GuildAchDB = { settings = { version = 3, innName = "Mozarteum" } } -- the 0.3.0 default
+    p.bob.saved.GuildAchDB = { settings = { version = 4, innName = "Mozarteum" } } -- a custom name from an older version
     LoginAll(w, p.bob)
-    eq(p.bob.ns.settings.innName, nil, "the old default is dropped")
+    eq(p.bob.ns.settings.innName, nil, "custom names are dropped")
     eq(p.bob.ns.UI.InnName(), "Regulars", "the guild's name")
-    p.bob:Slash("inn Mozarteum")
-    eq(p.bob.ns.UI.InnName(), "Mozarteum", "a name you picked yourself")
-    p.bob:Logout()
-    p.bob:Login()
-    w:Advance(6)
-    eq(p.bob.ns.UI.InnName(), "Mozarteum", "and it survives the next upgrade check")
-    p.bob:Slash("inn reset")
-    eq(p.bob.ns.UI.InnName(), "Regulars")
     Clean(w)
 end)
 
@@ -953,8 +973,6 @@ test("the badge, the tavern and every board render", function()
     local w, p = Guild()
     LoginAll(w, p.ana, p.bob)
     p.bob:Slash("badge")
-    p.bob:Slash("inn The Prancing Murloc")
-    eq(p.bob.ns.settings.innName, "The Prancing Murloc")
     p.bob:Slash("")
     local ui = p.bob.ns.UI._widgets()
     ui.tabs[2]:Click()
@@ -1318,7 +1336,7 @@ local ALLOWED_GLOBALS = {
     -- ...plus post-hooks: our code runs after JumpOrAscendStart / DoEmote /
     -- AbandonQuest and never changes what they do (no taint, no automation)
     "hooksecurefunc",
-    "InCombatLockdown", -- read-only: are we in combat (to hold guild chat posts)
+    "InCombatLockdown", "Minimap", "GetCursorPosition", -- the minimap button -- read-only: are we in combat (to hold guild chat posts)
     -- Own UI, timers and saved data
     "CreateFrame", "UIParent", "UISpecialFrames", "PlaySound", "C_Timer", "SlashCmdList",
     "GuildAchDB", "GuildAchCharDB", "SLASH_GUILDACHIEVEMENTS1", "SLASH_GUILDACHIEVEMENTS2", "SLASH_GUILDACHIEVEMENTS3",

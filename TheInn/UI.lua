@@ -3,7 +3,7 @@ local UI = {}
 ns.UI = UI
 
 -- The window is a tavern: plank walls, an inn sign hanging over the top
--- (the Mozarteum, unless you repaint it with /inn inn), achievements as
+-- (with your guild's name on it), achievements as
 -- plaques on the Trophy Wall, the leaderboards chalked on a Scoreboard, and
 -- the feed as Tavern Gossip.
 
@@ -210,9 +210,8 @@ local function Ago(ts)
     return math.floor(d / 86400) .. "d ago"
 end
 
--- The sign shows the guild's name, unless someone repainted it with /inn inn
+-- The sign shows the guild's name
 local function InnName()
-    if ns.settings and ns.settings.innName then return ns.settings.innName end
     local g = ns.Guild and ns.Guild()
     if g and g.name and g.name ~= "" then return g.name end
     return "The Empty Tavern"
@@ -837,6 +836,41 @@ local function RenderChess()
     content:SetHeight(math.max(1, n * LINE_H))
 end
 
+local SETTINGS = {
+    { key = "announce",     label = "Post my unlocks in guild chat",
+      note = "One line per unlock (or burst), at most every 10 seconds." },
+    { key = "toasts",       label = "Show the alert for my unlocks" },
+    { key = "othersToasts", label = "Show alerts for guildies' unlocks" },
+    { key = "obituaries",   label = "Show guildies' deaths in the gossip",
+      note = "They still count on the Scoreboard either way." },
+    { key = "minimapButton", label = "Show the minimap button",
+      after = function() UI.UpdateMinimapButton() end },
+    { key = "sound",        label = "Play sounds",
+      note = "The fanfare for your unlocks, and the chime for a chess challenge." },
+}
+
+local function RenderSettings()
+    SetHeader("Settings", "Click a button to switch it. Everything here is just for you.")
+    local n = 0
+    local function line(o)
+        n = n + 1
+        SetLine(GetLine(n), o)
+    end
+    local s = ns.settings
+    for _, opt in ipairs(SETTINGS) do
+        local on = s[opt.key] ~= false
+        line({ text = opt.label, right = on and (GREEN .. "On|r") or (GREY .. "Off|r"),
+               button = on and "Turn off" or "Turn on",
+               onClick = function()
+                   s[opt.key] = not on
+                   if opt.after then opt.after() end
+                   Render()
+               end })
+        if opt.note then line({ text = GREY .. "    " .. opt.note .. "|r" }) end
+    end
+    content:SetHeight(math.max(1, n * LINE_H))
+end
+
 local function RefreshHeader()
     local points, count = ns.PointsFor(ns.char.earned)
     local total = #ns.defs
@@ -884,6 +918,7 @@ Render = function()
     if view == "ach" then RenderAchievements()
     elseif view == "boards" then RenderBoards()
     elseif view == "chess" then RenderChess()
+    elseif view == "settings" then RenderSettings()
     else RenderFeed() end
 end
 
@@ -1057,6 +1092,17 @@ local function Build()
     f.side:SetPoint("BOTTOMLEFT", 14, 14)
     f.side:SetWidth(SIDE_W)
 
+    -- Settings, at the bottom of the sidebar
+    f.settingsButton = CreateFrame("Button", nil, f.side, "UIPanelButtonTemplate")
+    f.settingsButton:SetSize(SIDE_W - 16, 22)
+    f.settingsButton:SetPoint("BOTTOM", 0, 10)
+    f.settingsButton:SetText("Settings")
+    f.settingsButton:SetScript("OnClick", function()
+        view = view == "settings" and "ach" or "settings"
+        scroll:SetVerticalScroll(0)
+        Render()
+    end)
+
     -- The chalkboard behind the Scoreboard
     f.chalk = f:CreateTexture(nil, "BORDER")
     f.chalk:SetTexture(MEDIA .. "Chalkboard")
@@ -1092,7 +1138,8 @@ end
 
 -- For tests
 function UI._widgets()
-    return { frame = f, tabs = tabs, side = sideButtons, ach = achRows, lines = lineRows }
+    return { frame = f, tabs = tabs, side = sideButtons, ach = achRows, lines = lineRows,
+             settings = f and f.settingsButton }
 end
 
 -- ---------------------------------------------------------------------------
@@ -1254,4 +1301,84 @@ end
 function UI.TestBadge()
     local d = ns.byId.dieQuick or ns.defs[1]
     UI.Toast(d, nil, false)
+end
+
+-- ---------------------------------------------------------------------------
+-- Minimap button: the beer tankard on the minimap's edge. Left-click opens
+-- the tavern, right-click the chess board, drag to move it around.
+-- ---------------------------------------------------------------------------
+
+local mini
+
+local function PlaceMinimapButton()
+    local angle = math.rad(ns.settings.minimapAngle or 205)
+    local radius = ((Minimap:GetWidth() or 140) / 2) + 6
+    mini:ClearAllPoints()
+    mini:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
+end
+
+local function MinimapTooltip(self)
+    if not GameTooltip then return end
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText("The Inn", 1, 0.82, 0)
+    local points = ns.PointsFor(ns.char.earned)
+    GameTooltip:AddLine("Bar tab: " .. points .. " points", 1, 1, 1)
+    local G = ns.ChessGame
+    local game = G and G.Current()
+    if game and not game.over then
+        GameTooltip:AddLine(G.MyTurn() and "Chess: your move!" or "Chess: waiting for your opponent", 0.5, 1, 0.5)
+    end
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Left-click: open the tavern", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine("Right-click: chess board", 0.7, 0.7, 0.7)
+    GameTooltip:AddLine("Drag: move this button", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+end
+
+function UI.UpdateMinimapButton()
+    if not Minimap then return end
+    if ns.settings.minimapButton == false then
+        if mini then mini:Hide() end
+        return
+    end
+    if not mini then
+        mini = CreateFrame("Button", "TheInnMinimapButton", Minimap)
+        mini:SetSize(31, 31)
+        mini:SetFrameStrata("MEDIUM")
+        mini:SetFrameLevel(8)
+        mini:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        mini:RegisterForDrag("LeftButton")
+        mini.bg = mini:CreateTexture(nil, "BACKGROUND")
+        mini.bg:SetSize(20, 20)
+        mini.bg:SetPoint("CENTER", 0, 0)
+        mini.bg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+        mini.icon = mini:CreateTexture(nil, "ARTWORK")
+        mini.icon:SetSize(20, 20)
+        mini.icon:SetPoint("CENTER", 0, 1)
+        mini.icon:SetTexture(MEDIA .. "Icon")
+        mini.border = mini:CreateTexture(nil, "OVERLAY")
+        mini.border:SetSize(53, 53)
+        mini.border:SetPoint("TOPLEFT", 0, 0)
+        mini.border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+        mini:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+        mini:SetScript("OnClick", function(_, button)
+            if button == "RightButton" then ns.ChessUI.Toggle() else UI.Toggle() end
+        end)
+        mini:SetScript("OnEnter", MinimapTooltip)
+        mini:SetScript("OnLeave", HideTooltip)
+        mini:SetScript("OnDragStart", function(self)
+            self:SetScript("OnUpdate", function()
+                local mx, my = Minimap:GetCenter()
+                local cx, cy = GetCursorPosition()
+                local scale = Minimap:GetEffectiveScale()
+                if mx and cx and scale then
+                    ns.settings.minimapAngle = math.deg(math.atan2(cy / scale - my, cx / scale - mx))
+                    PlaceMinimapButton()
+                end
+            end)
+        end)
+        mini:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+    end
+    PlaceMinimapButton()
+    mini:Show()
 end

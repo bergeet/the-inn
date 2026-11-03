@@ -77,7 +77,6 @@ local DEFAULT_SETTINGS = {
     sound = true,
     officerRank = 1,      -- guild rank index 0 (GM) .. N; this and lower count as officers
     obituaries = true,    -- show guildmates' deaths in the feed
-    -- innName: set by /inn inn to override the sign; the guild name otherwise
 }
 
 -- Counters kept per character (see Data.lua for what each one means)
@@ -96,11 +95,7 @@ local function InitDB()
         GuildAchDB.settings.announce = true
         GuildAchDB.settings.version = 3
     end
-    -- 0.3.1: the sign shows the guild name unless you picked your own
-    if GuildAchDB.settings.version < 4 then
-        if GuildAchDB.settings.innName == "Mozarteum" then GuildAchDB.settings.innName = nil end
-        GuildAchDB.settings.version = 4
-    end
+    GuildAchDB.settings.innName = nil -- custom sign names were removed; the sign shows the guild's name
     GuildAchCharDB = GuildAchCharDB or {}
     GuildAchCharDB.earned = GuildAchCharDB.earned or {}
     GuildAchCharDB.stats = GuildAchCharDB.stats or {}
@@ -864,6 +859,7 @@ local function Startup()
     ns.scanned = true
     if ns.Trackers then pcall(ns.Trackers.OnStartup) end
     if ns.ChessGame then pcall(ns.ChessGame.Start) end
+    if ns.UI then pcall(ns.UI.UpdateMinimapButton) end
     if g then
         if ns.Comm then ns.Comm.Hello() end
     elseif IsInGuild and IsInGuild() then
@@ -1262,7 +1258,6 @@ local HELP = {
     "/inn others on|off - pop-ups for guildmates' unlocks",
     "/inn obits on|off - guildmates' deaths in the feed",
     "/inn stats - your deaths, jumps, duels and PvP record",
-    "/inn inn <name> - repaint the tavern sign (reset: back to the guild name)",
     "/inn chess <name> - challenge a guildie to chess (/inn chess opens the board)",
     "/inn chess barkeep | solo - practice against the barkeep, or play both sides",
     "/inn badge - show a test achievement alert",
@@ -1317,12 +1312,6 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
         else G.Challenge(rest) end
     elseif cmd == "badge" then
         if ns.UI then ns.UI.TestBadge() end
-    elseif cmd == "inn" then
-        local name = ns.Clean(rest, 32)
-        if name:lower() == "reset" then s.innName = nil elseif name ~= "" then s.innName = name end
-        ns.Print("the tavern sign reads: " .. (ns.UI and ns.UI.InnName() or s.innName or "?")
-                 .. (s.innName and " (/inn inn reset for the guild name)" or ""))
-        if ns.UI then ns.UI.Refresh() end
     elseif cmd == "others" then
         s.othersToasts = OnOff(rest, s.othersToasts); ns.Print("guildmate pop-ups " .. (s.othersToasts and "on" or "off"))
     elseif cmd == "officerrank" then
