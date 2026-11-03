@@ -2,7 +2,7 @@
 ## Title: The Inn
 ## Notes: Your guild's tavern: achievements, a scoreboard and gossip, shared with your guildmates. /inn
 ## Version: 0.6.0
-## IconTexture: Interface\Icons\INV_Misc_Gem_Pearl_04
+## IconTexture: Interface\AddOns\TheInn\Media\Icon
 ## SavedVariables: GuildAchDB
 ## SavedVariablesPerCharacter: GuildAchCharDB
 

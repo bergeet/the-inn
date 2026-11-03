@@ -544,6 +544,46 @@ def dot(u, v):
     return (1.0, 1.0, 1.0, clamp((1 - r) * 3))
 
 
+# ---------------------------------------------------------------------------
+# The addon's icon: a tankard of beer with foam spilling over
+# ---------------------------------------------------------------------------
+
+
+def beer(u, v):
+    x, y = u, v
+    body = sd_box(x, y, 0.44, 0.60, 0.25, 0.30, 0.06)
+    handle = abs(sd_circle(x, y, 0.71, 0.58, 0.14)) - 0.045
+    handle = max(handle, -(x - 0.66))  # only the part sticking out of the mug
+    foam = min(sd_circle(x, y, 0.27, 0.30, 0.10), sd_circle(x, y, 0.40, 0.24, 0.12),
+               sd_circle(x, y, 0.55, 0.27, 0.11), sd_circle(x, y, 0.65, 0.33, 0.08),
+               sd_box(x, y, 0.44, 0.36, 0.25, 0.06, 0.04),
+               sd_circle(x, y, 0.21, 0.42, 0.045), sd_box(x, y, 0.21, 0.47, 0.03, 0.06, 0.03))  # a drip
+    shape = min(body, handle, foam)
+    if shape > 0:
+        return (0, 0, 0, clamp(1 - shape / 0.04) * 0.5)  # soft shadow
+    outline = (0.16, 0.08, 0.03)
+    if -shape < 0.03:
+        return outline + (1.0,)
+    if foam <= 0:
+        t = clamp((y - 0.18) / 0.25)
+        return mix((1.0, 0.99, 0.94), (0.86, 0.80, 0.68), t) + (1.0,)
+    if handle <= 0 and body > 0:
+        return mix((0.62, 0.42, 0.20), (0.36, 0.22, 0.10), clamp((x - 0.70) * 5)) + (1.0,)
+    # Beer: amber, darker at the bottom, a highlight down the left, and bubbles
+    t = clamp((y - 0.40) / 0.5)
+    col = mix((1.0, 0.78, 0.22), (0.78, 0.42, 0.06), t)
+    if 0.24 < x < 0.29:
+        col = mix(col, (1.0, 0.97, 0.80), 0.55)
+    for bx, by, br in ((0.38, 0.62, 0.018), (0.50, 0.72, 0.014), (0.45, 0.52, 0.012), (0.56, 0.58, 0.016)):
+        if abs(math.hypot(x - bx, y - by) - br) < 0.006:
+            col = mix(col, (1.0, 0.95, 0.75), 0.7)
+    # Wooden hoops around the mug
+    for hy in (0.50, 0.80):
+        if abs(y - hy) < 0.025:
+            col = mix((0.55, 0.36, 0.16), (0.30, 0.18, 0.08), abs(y - hy) / 0.025)
+    return col + (1.0,)
+
+
 TEXTURES = [
     ("Wall", 512, 512, wall),
     ("Plank", 512, 64, plank),
@@ -556,6 +596,7 @@ TEXTURES = [
     ("AlertShield", 128, 128, shield),
     ("AlertIconFrame", 128, 128, icon_frame),
     ("ChessDot", 64, 64, dot),
+    ("Icon", 128, 128, beer),
 ]
 for _color in ("w", "b"):
     for _kind, _shape in PIECES.items():
@@ -602,6 +643,11 @@ def main():
         composite(out, imgs["BadgeGlint"], 300, 50, 40, 100, add=True, alpha=0.6)
         save_png(out, sys.argv[1])
         print("preview", sys.argv[1])
+        I = [[(0.12, 0.12, 0.14, 1.0)] * 220 for _ in range(128)]
+        composite(I, imgs["Icon"], 0, 0, 128, 128)
+        composite(I, imgs["Icon"], 140, 20, 32, 32)
+        composite(I, imgs["Icon"], 190, 30, 18, 18)
+        save_png(I, sys.argv[1].replace(".png", "_icon.png"))
         # Chess pieces on board squares
         B = [[(0.0, 0.0, 0.0, 1.0)] * 480 for _ in range(160)]
         for i in range(12):
