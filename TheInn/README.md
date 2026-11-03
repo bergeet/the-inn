@@ -98,6 +98,9 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.6.1**
+- A beer tankard as the addon's icon in the AddOns list.
+
 **0.6.0**
 - Tavern Chess: challenge guildies from the new Chess tab (or `/inn chess <name>`), with an Elo rating, a Chess scoreboard, gossip and achievements. Practice against the barkeep or on your own with `/inn chess barkeep` and `/inn chess solo`.
 
