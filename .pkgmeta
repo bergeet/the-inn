@@ -1,0 +1,13 @@
+# For the CurseForge / Wago packagers, if the addon is published there.
+# Only the TheInn folder goes to players.
+package-as: TheInn
+
+move-folders:
+  TheInn/TheInn: TheInn
+
+ignore:
+  - tests
+  - scripts
+  - dist
+  - .github
+  - README.md
