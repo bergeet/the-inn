@@ -43,7 +43,7 @@ end
 
 local Widget = {}
 local NOOP_PREFIXES = { "Set", "Get", "Is", "Can", "Enable", "Disable", "Register", "Unregister",
-                        "Lock", "Unlock", "Start", "Stop", "Clear", "Raise", "Lower", "Add", "Remove" }
+                        "Lock", "Unlock", "Start", "Stop", "Clear", "Raise", "Lower", "Add", "Remove", "Highlight" }
 
 local WidgetMT = {
     __index = function(_, k)

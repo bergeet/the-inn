@@ -10,7 +10,7 @@ ns.UI = UI
 --   Trophy Wall  achievements as plaques
 --   Scoreboard   leaderboards chalked on a board
 --   Gossip       the feed, pinned to a cork board one note per day
---   Chess        the board, your rating, the barkeep and challengers
+--   Chess        your game (played in the board window), rating, barkeep, challengers
 --   Workshop     professions and recipes
 -- Settings open from the cog in the header. Text uses the game's own fonts
 -- (Friz Quadrata, Morpheus, Arial Narrow) and every icon is a game icon.
@@ -460,6 +460,14 @@ end
 
 local function RowEnter(self)
     if self.def then return ShowTooltip(self) end
+    if self.link and GameTooltip then
+        -- The game's own tooltip for the recipe: what it makes and its reagents
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if not pcall(GameTooltip.SetHyperlink, GameTooltip, self.link) then GameTooltip:ClearLines() end
+        if self.tip then GameTooltip:AddLine(self.tip, 0.6, 0.8, 1, true) end
+        GameTooltip:Show()
+        return
+    end
     if self.tip and GameTooltip then
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(self.tip, 1, 1, 1, 1, true)
@@ -536,6 +544,7 @@ local function NewRow(list, i)
     r.btn = RedButton(r, "", 100, 20)
     r:SetScript("OnEnter", RowEnter)
     r:SetScript("OnLeave", HideTooltip)
+    r:SetScript("OnClick", function(self) if self.onRowClick then self.onRowClick() end end)
     list.rows[i] = r
     return r
 end
@@ -557,7 +566,7 @@ local function Add(list, o)
     r:SetPoint("TOPLEFT", o.x or 0, -list.y)
     r:SetSize(w, h)
     list.y = list.y + h + (o.gap or 0)
-    r.def, r.tip = o.def, o.tip
+    r.def, r.tip, r.link, r.onRowClick = o.def, o.tip, o.link, o.rowClick
     r.band:SetShown(o.band == true)
     r.line:SetShown(not o.noLine and not o.band and not o.head)
 
@@ -1455,49 +1464,42 @@ end
 -- Chess
 -- ---------------------------------------------------------------------------
 
-local SQ = 42
-local BOARD_W = SQ * 8 + 16
-local LIGHT, DARK = { 0.86, 0.76, 0.59 }, { 0.54, 0.37, 0.23 }
+local LEFT_W = 360
+
+-- Who's on your target, if it's a player (name, or nil)
+local function TargetName()
+    if not (UnitExists and UnitExists("target") and UnitIsPlayer and UnitIsPlayer("target")) then return nil end
+    local name, realm = UnitName("target")
+    if type(name) ~= "string" or name == "" or ns.IsSecret(name) then return nil end
+    if realm and realm ~= "" then return name .. "-" .. realm end
+    return name
+end
 
 local function BuildChess(room)
     local fr = room.frame
-    room.title = Heading(fr, "")
-    room.title:SetPoint("TOPLEFT", 2, -2)
-    room.status = Label(fr, 12, { 0.56, 0.82, 0.42 })
-    room.status:SetPoint("LEFT", room.title, "RIGHT", 10, 0)
 
-    local b = CreateFrame("Frame", nil, fr)
-    b:SetPoint("TOPLEFT", 0, -28)
-    b:SetSize(BOARD_W, BOARD_W)
-    local wood = b:CreateTexture(nil, "BACKGROUND")
-    wood:SetAllPoints()
-    wood:SetTexture(MEDIA .. "Plank")
-    wood:SetVertexColor(0.75, 0.55, 0.4)
-    Border(b, C.brass)
-    room.squares = {}
-    for i = 1, 64 do
-        local col, row = (i - 1) % 8, math.floor((i - 1) / 8)
-        local sq = b:CreateTexture(nil, "BORDER")
-        sq:SetSize(SQ, SQ)
-        sq:SetPoint("TOPLEFT", 8 + col * SQ, -8 - row * SQ)
-        local mark = b:CreateTexture(nil, "ARTWORK")
-        mark:SetAllPoints(sq)
-        local piece = b:CreateTexture(nil, "OVERLAY")
-        piece:SetSize(SQ - 4, SQ - 4)
-        piece:SetPoint("CENTER", sq, "CENTER")
-        room.squares[i] = { sq = sq, mark = mark, piece = piece }
-    end
-    b:EnableMouse(true)
-    b:SetScript("OnMouseUp", function() ns.ChessUI.Open() end) -- the full board, to play on
-    room.board = b
-    room.under = List(room, fr, BOARD_W, 32, 32)
-    room.under.scroll:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, -8)
+    -- Left: your game (played in the board window), your rating, the barkeep
+    local game = Well(fr)
+    game:SetPoint("TOPLEFT")
+    game:SetSize(LEFT_W, 150)
+    room.icon = game:CreateTexture(nil, "ARTWORK")
+    room.icon:SetSize(40, 40)
+    room.icon:SetPoint("TOPLEFT", 12, -12)
+    room.title = Heading(game, "", 15)
+    room.title:SetPoint("TOPLEFT", room.icon, "TOPRIGHT", 10, -2)
+    room.title:SetWidth(LEFT_W - 80)
+    room.status = Label(game, 12, C.muted)
+    room.status:SetPoint("TOPLEFT", room.title, "BOTTOMLEFT", 0, -5)
+    room.status:SetWidth(LEFT_W - 80)
+    room.moves = Label(game, 12, C.muted)
+    room.moves:SetPoint("TOPLEFT", 14, -68)
+    room.moves:SetWidth(LEFT_W - 28)
+    room.play = RedButton(game, "Open board", 140, 24, function() ns.ChessUI.Open() end)
+    room.play:SetPoint("BOTTOMRIGHT", -14, 12)
 
-    local rx = BOARD_W + 18
-    local rw = BODY_W - rx
     local rating = Well(fr)
-    rating:SetPoint("TOPLEFT", rx, 0)
-    rating:SetSize(rw, 64)
+    rating:SetPoint("TOPLEFT", 0, -(150 + GAP))
+    rating:SetSize(LEFT_W, 64)
     local rl = Label(rating, 11, C.muted)
     rl:SetPoint("TOPLEFT", 14, -12)
     rl:SetText("Tavern rating")
@@ -1507,141 +1509,146 @@ local function BuildChess(room)
     room.record:SetPoint("RIGHT", -14, 0)
     room.record:SetJustifyH("RIGHT")
 
+    local bkTop = 150 + 64 + 2 * GAP
     local bk = Well(fr)
-    bk:SetPoint("TOPLEFT", rx, -(64 + GAP))
-    bk:SetSize(rw, 100)
-    local bh = Heading(bk, "Play the barkeep", 14)
-    bh:SetPoint("TOPLEFT", 14, -12)
+    bk:SetPoint("TOPLEFT", 0, -bkTop)
+    bk:SetSize(LEFT_W, BODY_H - bkTop)
+    Heading(bk, "Play the barkeep", 14):SetPoint("TOPLEFT", 14, -12)
     local bs = Label(bk, 11, C.muted)
-    bs:SetPoint("LEFT", bh, "RIGHT", 8, 0)
+    bs:SetPoint("TOPLEFT", 14, -34)
     bs:SetText("He's had a few. Practice games don't count.")
     room.quip = Label(bk, 12, { 0.85, 0.78, 0.65 })
-    room.quip:SetPoint("TOPLEFT", 14, -38)
-    room.quip:SetWidth(rw - 28)
-    RedButton(bk, "Practice board", 120, 22, function() ns.ChessGame.Practice("solo") end):SetPoint("BOTTOMRIGHT", -14, 12)
-    RedButton(bk, "Pull up a chair", 130, 22, function() ns.ChessGame.Practice("barkeep") end)
-        :SetPoint("BOTTOMRIGHT", -140, 12)
+    room.quip:SetPoint("TOPLEFT", 14, -60)
+    room.quip:SetWidth(LEFT_W - 28)
+    room.chair = RedButton(bk, "Pull up a chair", 150, 22, function() ns.ChessGame.Practice("barkeep") end)
+    room.chair:SetPoint("BOTTOMLEFT", 14, 14)
+    room.solo = RedButton(bk, "Practice board", 150, 22, function() ns.ChessGame.Practice("solo") end)
+    room.solo:SetPoint("BOTTOMRIGHT", -14, 14)
 
+    -- Right: challenge someone, by name, by target, or from the list
+    local rx = LEFT_W + GAP
+    local rw = BODY_W - rx
     local ch = Well(fr)
-    local top = 64 + 100 + 2 * GAP
-    ch:SetPoint("TOPLEFT", rx, -top)
-    ch:SetSize(rw, BODY_H - top)
-    Heading(ch, "Challenge a guildie", 14):SetPoint("TOPLEFT", 14, -12)
-    room.challenge = List(room, ch, rw - 12, BODY_H - top - 44, 28, "wall", true)
-    room.challenge.scroll:SetPoint("TOPLEFT", 8, -36)
+    ch:SetPoint("TOPLEFT", rx, 0)
+    ch:SetSize(rw, BODY_H)
+    Heading(ch, "Challenge a guildie", 15):SetPoint("TOPLEFT", 14, -12)
+    local hint = Label(ch, 11, C.muted)
+    hint:SetPoint("TOPLEFT", 14, -34)
+    hint:SetText("Rated games. They get a pop-up to accept, and you play in the board window.")
+
+    local function ChallengeName()
+        local text = room.name.value or ""
+        if text == "" then return end
+        ns.ChessGame.Challenge(text)
+        room.name:SetText("")
+        room.name:ClearFocus()
+        Render()
+    end
+    room.name = SearchBox(ch, "TheInnChessName", "Type a guildie's name...", 180)
+    room.name:SetPoint("TOPLEFT", 20, -60)
+    room.name.onChange = function() Render() end
+    room.name:SetScript("OnEnterPressed", ChallengeName)
+    room.byName = RedButton(ch, "Challenge", 100, 22, ChallengeName)
+    room.byName:SetPoint("LEFT", room.name, "RIGHT", 8, 0)
+    room.byTarget = RedButton(ch, "Challenge target", 140, 22, function()
+        local who = TargetName()
+        if who then ns.ChessGame.Challenge(who) else ns.Print("|cffd8b26cchess:|r target a guildie first.") end
+        Render()
+    end)
+    room.byTarget:SetPoint("LEFT", room.byName, "RIGHT", 8, 0)
+
+    local sub = Label(ch, 12, C.gold)
+    sub:SetPoint("TOPLEFT", 14, -96)
+    sub:SetText("Online now")
+    room.challenge = List(room, ch, rw - 12, BODY_H - 120, 30, "wall", true)
+    room.challenge.scroll:SetPoint("TOPLEFT", 8, -114)
 end
 
 local function RenderChess(room)
     local G, Ch = ns.ChessGame, ns.Chess
     local game = G.Current()
     local s, san = G.State()
-    if not s then s, san = Ch.New(), {} end
+    local live = game and not game.over
+    local busy = game and game.mode == "guild" and not game.over
+    local inv, pend = G.Invite(), G.Pending()
 
-    -- Title and whose move it is
+    -- Your game: who, whose move, the last few moves, and the way to the board
     if game then
-        local title = game.mode == "guild" and ("You vs " .. ClassColored(game.opp))
-                      or (game.mode == "barkeep" and "You vs the barkeep" or "Practice board")
-        room.title:SetText(title)
-        if game.over then room.status:SetText(MUTED .. "game over|r")
+        room.title:SetText(game.mode == "guild" and ("You vs " .. ClassColored(game.opp))
+                           or (game.mode == "barkeep" and "You vs the barkeep" or "Practice board"))
+        room.icon:SetTexture(MEDIA .. "Chess" .. ((game.me or "w"):upper()) .. "K")
+        if game.over then room.status:SetText(MUTED .. "Game over.|r")
         elseif game.mode == "solo" then room.status:SetText(GREEN .. (s.turn == "w" and "White" or "Black") .. " to move|r")
-        elseif G.MyTurn() then room.status:SetText(GREEN .. "your move|r")
-        else room.status:SetText(MUTED .. "their move|r") end
-    else
-        room.title:SetText("No game on the board")
-        room.status:SetText(MUTED .. "pull up a chair|r")
-    end
-
-    -- The position, seen from your side
-    local flip = game and game.me == "b"
-    local last
-    if game and #game.moves > 0 then
-        local uci = game.moves[#game.moves]
-        last = { [Ch.Parse(uci:sub(1, 2))] = true, [Ch.Parse(uci:sub(3, 4))] = true }
-    end
-    for row = 1, 8 do
-        for col = 1, 8 do
-            local sq = flip and Ch.Sq(9 - col, row) or Ch.Sq(col, 9 - row)
-            local cell = room.squares[(row - 1) * 8 + col]
-            local c = ((Ch.FileOf(sq) + Ch.RankOf(sq)) % 2 == 0) and DARK or LIGHT
-            cell.sq:SetColorTexture(c[1], c[2], c[3], 1)
-            if last and last[sq] then
-                cell.mark:SetColorTexture(1, 0.85, 0.2, 0.32)
-                cell.mark:Show()
-            else
-                cell.mark:Hide()
-            end
-            local p = s.board[sq]
-            if p then
-                cell.piece:SetTexture(MEDIA .. "Chess" .. p:sub(1, 1):upper() .. p:sub(2, 2))
-                cell.piece:SetAlpha(game and 1 or 0.55)
-                cell.piece:Show()
-            else
-                cell.piece:Hide()
-            end
-        end
-    end
-
-    -- Under the board: the last few moves, and the button to play
-    local L = room.under
-    Begin(L)
-    if game then
+        elseif G.MyTurn() then room.status:SetText(GREEN .. "Your move!|r")
+        else room.status:SetText(MUTED .. "Their move.|r") end
         local parts = {}
-        for i = math.max(1, #san - 5), #san do
+        for i = math.max(1, #san - 7), #san do
             parts[#parts + 1] = (i % 2 == 1 and (math.floor((i + 1) / 2) .. ". ") or "") .. san[i]
         end
-        Add(L, { text = MUTED .. (#san == 0 and "No moves yet." or table.concat(parts, "  ")) .. "|r",
-                 btn = "Open board", onClick = function() ns.ChessUI.Open() end, noLine = true })
+        room.moves:SetText(#san == 0 and "No moves yet." or table.concat(parts, "  "))
+        room.play:SetText(live and (G.MyTurn() and "Make your move" or "Open board") or "See the board")
     else
-        Add(L, { text = MUTED .. "Challenge a guildie, or play the barkeep.|r", noLine = true })
+        room.title:SetText("No game on")
+        room.icon:SetTexture(MEDIA .. "ChessWN")
+        room.status:SetText(MUTED .. "Challenge a guildie, or pull up a chair.|r")
+        room.moves:SetText("")
+        room.play:SetText("Open board")
     end
-    Finish(L)
 
     local st = ns.char.stats
     room.elo:SetText(tostring(G.MyElo()))
     room.record:SetText(string.format("%s%d|r won   %s%d|r lost   %s%d|r drawn", GREEN, st.chessWins or 0, SHAME,
                                       st.chessLosses or 0, GREY, st.chessDraws or 0))
     room.quip:SetText("\"" .. Pick(BARKEEP_QUIPS, math.floor(GetTime() / 600)) .. "\"")
+    local canPractice = not busy
+    if canPractice then room.chair:Enable() room.solo:Enable() else room.chair:Disable() room.solo:Disable() end
 
-    -- Challengers: an invite, a pending challenge, and everyone online with the addon
-    L = room.challenge
+    -- Challenging
+    local canChallenge = not busy and pend == nil
+    if canChallenge and (room.name.value or "") ~= "" then room.byName:Enable() else room.byName:Disable() end
+    if canChallenge then room.byTarget:Enable() else room.byTarget:Disable() end
+
+    local L = room.challenge
     Begin(L)
     local function Act(fn) return function() fn() Render() end end
-    local busy = game and game.mode == "guild" and not game.over
-    local inv, pend = G.Invite(), G.Pending()
     if inv then
         Add(L, { icon = MEDIA .. "ChessWK", iconSize = 18, text = GOLD .. ClassColored(inv.from) .. " challenges you!|r",
                  right = inv.elo and (MUTED .. "rated " .. inv.elo .. "|r") or "", rightW = 70, btn = "Accept", onClick = Act(G.Accept) })
     end
     if pend then Add(L, { icon = MEDIA .. "ChessWK", iconSize = 18, text = "Waiting for " .. ClassColored(pend.to) .. " to answer..." }) end
+    if busy then Add(L, { text = MUTED .. "Finish (or resign) your game to challenge someone else.|r", noLine = true }) end
     local g = ns.Guild()
-    local players, others = {}, 0
+    local players = {}
     for name, e in pairs(ns.roster) do
         if e.online and not ns.SameName(name, ns.me) then
-            local m = g and g.members[name]
-            if m then players[#players + 1] = { name = name, m = m, e = e } else others = others + 1 end
+            players[#players + 1] = { name = name, m = g and g.members[name], e = e }
         end
     end
     table.sort(players, function(a, b)
-        local ra, rb = a.m.stats.ce or 1200, b.m.stats.ce or 1200
+        if (a.m ~= nil) ~= (b.m ~= nil) then return a.m ~= nil end -- addon users first
+        local ra, rb = a.m and a.m.stats.ce or 0, b.m and b.m.stats.ce or 0
         if ra ~= rb then return ra > rb end
         return a.name < b.name
     end)
     for _, p in ipairs(players) do
-        local sst = p.m.stats
-        local played = (sst.cw or 0) + (sst.cl or 0) + (sst.cd or 0)
-        Add(L, { dot = ONLINE, text = ClassColored(p.name) .. MUTED .. "  level " .. (p.e.level or "?") .. "|r",
-                 right = played > 0 and string.format("%s%d|r  %d-%d-%d", GOLD, sst.ce or 1200, sst.cw or 0, sst.cl or 0, sst.cd or 0)
-                         or (MUTED .. "unrated|r"), rightW = 90,
-                 btn = "Challenge", disabled = busy or pend ~= nil, onClick = Act(function() G.Challenge(p.name) end) })
+        local right
+        if p.m then
+            local sst = p.m.stats
+            local played = (sst.cw or 0) + (sst.cl or 0) + (sst.cd or 0)
+            right = played > 0 and string.format("%s%d|r  %d-%d-%d", GOLD, sst.ce or 1200, sst.cw or 0, sst.cl or 0, sst.cd or 0)
+                    or (MUTED .. "unrated|r")
+        else
+            right = MUTED .. "no addon?|r"
+        end
+        Add(L, { dot = ONLINE, text = ClassColored(p.name) .. MUTED .. "  " .. (p.e.level or "?") .. "|r",
+                 right = right, rightW = 90,
+                 tip = not p.m and "We haven't heard from their addon yet. Challenge anyway: if they have The Inn they'll get the invite." or nil,
+                 btn = "Challenge", disabled = not canChallenge, onClick = Act(function() G.Challenge(p.name) end) })
     end
     if #players == 0 then
-        Add(L, { text = MUTED .. "Nobody with the addon is online.|r", noLine = true })
+        Add(L, { text = MUTED .. "Nobody else in the guild is online.|r", noLine = true })
         Add(L, { text = MUTED .. "The barkeep is always up for a game.|r", noLine = true })
     end
-    if others > 0 then
-        Add(L, { text = MUTED .. string.format("+%d online without the addon. Peer pressure them.|r", others), noLine = true })
-    end
-    if busy then Add(L, { text = MUTED .. "Finish (or resign) your game to challenge someone else.|r", noLine = true }) end
     Finish(L)
 end
 
@@ -1674,6 +1681,64 @@ local function BuildWorkshop(room)
     well:SetSize(mw, BODY_H - 42)
     room.list = List(room, well, mw - 10, BODY_H - 50, 28, "wall", true)
     room.list.scroll:SetPoint("TOPLEFT", 6, -4)
+end
+
+-- A recipe id ("2329", or "i<item id>") as a game link, for its tooltip
+local function RecipeLink(id)
+    local item = id:match("^i(%d+)$")
+    return item and ("item:" .. item) or ("enchant:" .. id)
+end
+
+local function WowheadURL(id)
+    local item = id:match("^i(%d+)$")
+    return "https://www.wowhead.com/classic/" .. (item and ("item=" .. item) or ("spell=" .. id))
+end
+
+-- A little box with a link to copy (the game can't open a browser)
+local copyBox
+local function ShowCopyBox(title, url)
+    if not copyBox then
+        copyBox = CreateFrame("Frame", "TheInnCopyBox", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        copyBox:SetSize(380, 86)
+        copyBox:SetPoint("CENTER", 0, 120)
+        copyBox:SetFrameStrata("DIALOG")
+        copyBox:EnableMouse(true)
+        Fill(copyBox, 0.08, 0.05, 0.025, 0.96):SetAllPoints()
+        Border(copyBox, C.brass)
+        copyBox.title = Shadow(Label(copyBox, 13, C.gold))
+        copyBox.title:SetPoint("TOPLEFT", 12, -10)
+        copyBox.title:SetWidth(330)
+        local hint = Label(copyBox, 11, C.muted)
+        hint:SetPoint("BOTTOMLEFT", 12, 10)
+        hint:SetText("Ctrl+C to copy, then paste it in your browser.")
+        copyBox.edit = CreateFrame("EditBox", nil, copyBox, "InputBoxTemplate")
+        copyBox.edit:SetSize(350, 20)
+        copyBox.edit:SetPoint("TOPLEFT", 16, -32)
+        copyBox.edit:SetAutoFocus(false)
+        copyBox.edit:SetScript("OnEscapePressed", function() copyBox:Hide() end)
+        copyBox.edit:SetScript("OnEnterPressed", function() copyBox:Hide() end)
+        -- Typing can't change it: put the link back
+        copyBox.edit:SetScript("OnTextChanged", function(self)
+            if self:GetText() ~= copyBox.url then self:SetText(copyBox.url or "") self:HighlightText() end
+        end)
+        local close = CreateFrame("Button", nil, copyBox, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", 2, 2)
+        tinsert(UISpecialFrames, "TheInnCopyBox")
+    end
+    copyBox.url = url
+    copyBox.title:SetText(title)
+    copyBox.edit:SetText(url)
+    copyBox:Show()
+    copyBox.edit:SetFocus()
+    copyBox.edit:HighlightText()
+end
+UI.ShowCopyBox = ShowCopyBox
+
+-- A recipe row: hover for the reagents, click for Wowhead
+local function RecipeRow(id, name)
+    return RecipeLink(id), "Click for a Wowhead link.", function()
+        ShowCopyBox((name or ("Recipe #" .. id)) .. " on Wowhead", WowheadURL(id))
+    end
 end
 
 local function ClearSearch(room)
@@ -1713,10 +1778,12 @@ local function RenderWorkshop(room)
 
     if searching then
         local results = Wk.Search(searchText, 100)
-        SetHeader("Who can make it?", "Recipes matching \"" .. searchText .. "\". Ask them nicely.")
+        SetHeader("Who can make it?", "Recipes matching \"" .. searchText .. "\". Hover: reagents. Click: Wowhead.")
         if #results == 0 then Add(L, { text = MUTED .. "Nobody in the guild knows a recipe like that. Yet.|r", noLine = true }) end
         for _, r in ipairs(results) do
-            Add(L, { icon = Wk.Icon(r.key), iconSize = 18, text = GOLD .. r.name .. "|r", right = NameList(r.who, 3), rightW = 250 })
+            local link, tip, click = RecipeRow(r.id, r.name)
+            Add(L, { icon = Wk.Icon(r.key), iconSize = 18, text = GOLD .. r.name .. "|r", right = NameList(r.who, 3), rightW = 250,
+                     link = link, tip = tip, rowClick = click })
         end
         if results.more then Add(L, { text = MUTED .. "...and " .. results.more .. " more. Try a longer search.|r", noLine = true }) end
     elseif shown then
@@ -1728,14 +1795,17 @@ local function RenderWorkshop(room)
             return a.id < b.id
         end)
         SetHeader(ClassColored(workshopWho) .. "'s " .. Wk.Name(workshopProf),
-                  string.format("%d recipe%s known, skill %d/%d.", #list, #list == 1 and "" or "s", shown.rank or 0, shown.max or 0))
+                  string.format("%d recipe%s known, skill %d/%d. Hover: reagents. Click: Wowhead.", #list,
+                                #list == 1 and "" or "s", shown.rank or 0, shown.max or 0))
         Add(L, { text = MUTED .. "Back to everyone with " .. Wk.Name(workshopProf) .. "|r", btn = "Back",
                  onClick = function()
                      workshopWho = nil
                      Render()
                  end })
         for _, r in ipairs(list) do
-            Add(L, { icon = Wk.Icon(workshopProf), iconSize = 18, text = r.name or (MUTED .. "Recipe #" .. r.id .. "|r") })
+            local link, tip, click = RecipeRow(r.id, r.name)
+            Add(L, { icon = Wk.Icon(workshopProf), iconSize = 18, text = r.name or (MUTED .. "Recipe #" .. r.id .. "|r"),
+                     link = link, tip = tip, rowClick = click })
         end
     elseif workshopProf then
         local name = Wk.Name(workshopProf)
@@ -2117,6 +2187,13 @@ end
 -- The roster changed: everything but the Trophy Wall shows who's online
 function UI.RefreshIfGuildTab()
     if view ~= "ach" then UI.Refresh() end
+end
+
+-- Open the tavern on a given room ("chess", ...)
+function UI.OpenRoom(key)
+    if not f then Build() end
+    f:Show()
+    Go(key)
 end
 
 function UI.Toggle()

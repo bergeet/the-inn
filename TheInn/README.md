@@ -20,12 +20,12 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 - **Trophy Wall**: your achievements as plaques, by category. Filter by earned, not yet, or within reach (closest first), or search by name. Hover one to see which guildies have it. Hidden ones show `???` and a hint until you earn them.
 - **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (by duel rating) and duels fled, plus your own tally. Number one on each board gets a title. The duel boards also show your record against each guildmate.
 - **Gossip**: a cork board with a note for each day: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries, and guild duel and chess results. Deaths in the same place within a minute are grouped, so a raid wipe is one line. The switch at the top turns your guild chat posts on or off.
-- **Chess**: your game on the board (click it to play), your rating, the barkeep, and the guildies online with the addon, each with a Challenge button.
-- **Workshop**: every profession in the guild, who has it and at what skill (online guildies first), and the recipes each of them knows. The search box finds a recipe by name and lists who can make it.
+- **Chess**: the lobby. Your current game (with a button into the board window, where you play), your rating, the barkeep, and ways to challenge someone: type a name, challenge your target, or pick from the guildies online.
+- **Workshop**: every profession in the guild, who has it and at what skill (online guildies first), and the recipes each of them knows. The search box finds a recipe by name and lists who can make it. Hover a recipe for the game's own tooltip (with its reagents); click it for a Wowhead link to copy.
 
 **The Workshop.** Skill levels are shared on their own. Recipes are only readable while your profession window is open, so **open each profession window once** (and again after learning new recipes) and the addon shares what's in it a few seconds after you close it. It never opens the window, expands categories or crafts anything for you. If a category in the window is collapsed, its recipes can't be seen: the ones you already shared are kept, and the Workshop tab asks you to open the window with everything expanded to pick up new ones. On Classic Era, Enchanting uses its own (craft) window, which works the same way. Item tooltips also get a "Craftable by: ..." line when a guildie knows a recipe of that name (switch it off in Settings).
 
-**Tavern Chess.** The **Chess** tab lists the guildies online with the addon, with their rating and a Challenge button (or type `/inn chess <name>`); they get a popup to accept. The board opens for both of you, moves travel as hidden addon whispers, and a game survives logging out (it picks up where you left off when you're both online). Everyone has a rating (Elo, starting at 1200) that goes up and down with each game; the Chess scoreboard ranks by it. Win, lose or draw, it also goes into the gossip. Want to try it with nobody around? `/inn chess barkeep` plays the barkeep (a simple opponent), and `/inn chess solo` lets you move both sides. Practice games don't count.
+**Tavern Chess.** On the **Chess** tab, type a guildie's name, click **Challenge target**, or pick someone from the online list (or type `/inn chess <name>`); they get a popup to accept. A challenge nobody answers within a minute tells you so (they may not have the addon). The board opens for both of you, moves travel as hidden addon whispers, and a game survives logging out (it picks up where you left off when you're both online). Everyone has a rating (Elo, starting at 1200) that goes up and down with each game; the Chess scoreboard ranks by it. Win, lose or draw, it also goes into the gossip. Want to try it with nobody around? `/inn chess barkeep` plays the barkeep (a simple opponent), and `/inn chess solo` lets you move both sides. Practice games don't count. Resigning takes two clicks.
 
 Every unlock shows an **achievement alert** at the bottom of the screen, in the style of the classic Wrath-era one: a gold-framed bar with the icon on the left, the points on a shield on the right, a gold flash and a shine. `/inn badge` shows a test one.
 
@@ -104,6 +104,12 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.9.0**
+- Chess: the Chess tab is now a lobby, and the board window is the one place to play. Challenge by typing a name, by your target, or from the online list, which now shows every online guildie (the ones the addon hasn't heard from yet are marked "no addon?").
+- Chess: Resign moved off the spot where "Play the barkeep" sits and now takes two clicks, so a double-click can't throw a game.
+- Chess: an unanswered challenge tells you after a minute instead of quietly expiring.
+- Workshop: hover a recipe for its tooltip with reagents, click it for a Wowhead link to copy.
 
 **0.8.0**
 - A new look: a snugger header with a small hanging sign, the rooms behind tabs along the bottom edge, and the game's own fonts and icons throughout. The window is 900×596 and can be scaled from 80% to 120% in Settings.

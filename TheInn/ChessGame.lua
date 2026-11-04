@@ -161,6 +161,14 @@ function G.Challenge(input)
     pending = { id = string.format("%x%02d", Now(), math.random(0, 99)), to = who, color = color, at = GetTime() }
     ns.Comm.Whisper(who, "C", "i", pending.id, color, G.MyElo())
     Print("you challenge " .. ns.BaseName(who) .. ". Waiting for an answer...")
+    local id = pending.id
+    C_Timer.After(INVITE_TIMEOUT + 1, function()
+        if pending and pending.id == id then
+            pending = nil
+            Print("no answer from " .. ns.BaseName(who) .. ". Away, or no The Inn installed? Tell them to grab it.")
+            Refresh()
+        end
+    end)
     Refresh()
 end
 

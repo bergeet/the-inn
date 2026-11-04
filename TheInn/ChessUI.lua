@@ -57,10 +57,20 @@ end
 
 local function Deselect()
     selected, targets = nil, {}
+    if promo then promo:Hide() end
 end
 
-local function ShowPromotion(moves)
-    local m = moves[1]
+-- Redraw this window, and the Chess tab (it shows whose move it is).
+local function RefreshAll()
+    CUI.Refresh()
+    if ns.UI then ns.UI.Refresh() end
+end
+
+
+local BuildPromo
+
+local function ShowPromotion(moves, anchor)
+    BuildPromo()
     promo.moves = moves
     local color = G.State().turn
     for i, kind in ipairs({ "Q", "R", "B", "N" }) do
@@ -68,18 +78,19 @@ local function ShowPromotion(moves)
         promo.buttons[i].kind = kind
     end
     promo:ClearAllPoints()
-    promo:SetPoint("TOP", squares[m.to], "BOTTOM", 0, -2)
+    promo:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
     promo:Show()
 end
 
-local function OnSquare(sq)
+-- A click on a square of either board; anchor is the clicked widget (for the promotion picker).
+function CUI.Click(sq, anchor)
     local g = G.Current()
     local s = G.State()
-    if not g or not s or g.over or not G.MyTurn() then Deselect() CUI.Refresh() return end
-    promo:Hide()
+    if not g or not s or g.over or not G.MyTurn() then Deselect() RefreshAll() return end
+    if promo then promo:Hide() end
     local options = targets[sq]
     if selected and options then
-        if #options > 1 then ShowPromotion(options) return end -- the four promotion choices
+        if #options > 1 then ShowPromotion(options, anchor) return end -- the four promotion choices
         Deselect()
         G.Move(C.ToUCI(options[1]))
         return
@@ -96,8 +107,23 @@ local function OnSquare(sq)
     else
         Deselect()
     end
-    CUI.Refresh()
+    RefreshAll()
 end
+local function OnSquare(sq) CUI.Click(sq, squares[sq]) end
+
+-- Resigning takes two clicks, so a stray double-click can't throw a game.
+local resignArmed = 0
+function CUI.ResignClick()
+    if GetTime() - resignArmed < 4 then
+        resignArmed = 0
+        G.Resign()
+    else
+        resignArmed = GetTime()
+        RefreshAll()
+        C_Timer.After(4.1, RefreshAll)
+    end
+end
+function CUI.ResignArmed() return GetTime() - resignArmed < 4 end
 
 -- ---------------------------------------------------------------------------
 -- Drawing
@@ -201,7 +227,7 @@ function CUI.Refresh()
     f.topIcon:SetTexture(MEDIA .. "Chess" .. top:upper() .. "K")
     f.bottomName:SetText(Seat(C.Other(top)))
     f.bottomIcon:SetTexture(MEDIA .. "Chess" .. C.Other(top):upper() .. "K")
-    f.status:SetText(g and StatusText(g, s, outcome) or "No game. Challenge a guildie with\n/inn chess <name>, or practice:")
+    f.status:SetText(g and StatusText(g, s, outcome) or "No game on. Practice, or find\nsomeone to play:")
     f.moves:SetText(MoveList(san or {}))
     if mode == "guild" and g.over and g.eloChange then
         local c = g.eloChange
@@ -217,15 +243,48 @@ function CUI.Refresh()
 
     local live = g and not g.over
     f.resign:SetShown(live and true or false)
+    f.resign:SetText(CUI.ResignArmed() and "Sure?" or "Resign")
     f.draw:SetShown(live and mode == "guild" or false)
     f.draw:SetText(G.DrawOffered() and "Accept draw" or "Offer draw")
     f.barkeep:SetShown(not live)
     f.solo:SetShown(not live)
+    f.find:SetShown(not live)
 end
 
 -- ---------------------------------------------------------------------------
 -- Building
 -- ---------------------------------------------------------------------------
+
+-- The promotion picker floats above whichever board was clicked
+BuildPromo = function()
+    if promo then return end
+    promo = Panel(UIParent, nil, MEDIA .. "Plank", { 0.8, 0.7, 0.55, 1 }, { 0.85, 0.66, 0.25 }, EDGE, 12)
+    promo:SetSize(4 * 40 + 12, 46)
+    promo:SetFrameStrata("DIALOG")
+    promo.buttons = {}
+    for i = 1, 4 do
+        local b = CreateFrame("Button", nil, promo)
+        b:SetSize(40, 40)
+        b:SetPoint("LEFT", 6 + (i - 1) * 40, 0)
+        b.tex = b:CreateTexture(nil, "ARTWORK")
+        b.tex:SetAllPoints()
+        b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+        b.hl:SetAllPoints()
+        b.hl:SetColorTexture(1, 1, 1, 0.2)
+        b:SetScript("OnClick", function(self)
+            promo:Hide()
+            for _, m in ipairs(promo.moves or {}) do
+                if m.promo == self.kind then
+                    Deselect()
+                    G.Move(C.ToUCI(m))
+                    return
+                end
+            end
+        end)
+        promo.buttons[i] = b
+    end
+    promo:Hide()
+end
 
 local function Build()
     f = Panel(UIParent, "TheInnChess", MEDIA .. "Wall", { 1, 1, 1, 1 }, { 0.75, 0.6, 0.35 }, DIALOG_EDGE, 32)
@@ -284,34 +343,6 @@ local function Build()
         f.ranks[i]:SetPoint("RIGHT", f.board, "TOPLEFT", -3, -8 - (i - 0.5) * SQ)
     end
 
-    -- Promotion picker
-    promo = Panel(f, nil, MEDIA .. "Plank", { 0.8, 0.7, 0.55, 1 }, { 0.85, 0.66, 0.25 }, EDGE, 12)
-    promo:SetSize(4 * 40 + 12, 46)
-    promo:SetFrameLevel(f.board:GetFrameLevel() + 10)
-    promo.buttons = {}
-    for i = 1, 4 do
-        local b = CreateFrame("Button", nil, promo)
-        b:SetSize(40, 40)
-        b:SetPoint("LEFT", 6 + (i - 1) * 40, 0)
-        b.tex = b:CreateTexture(nil, "ARTWORK")
-        b.tex:SetAllPoints()
-        b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-        b.hl:SetAllPoints()
-        b.hl:SetColorTexture(1, 1, 1, 0.2)
-        b:SetScript("OnClick", function(self)
-            promo:Hide()
-            for _, m in ipairs(promo.moves or {}) do
-                if m.promo == self.kind then
-                    Deselect()
-                    G.Move(C.ToUCI(m))
-                    return
-                end
-            end
-        end)
-        promo.buttons[i] = b
-    end
-    promo:Hide()
-
     -- Side panel: players, status, moves, buttons
     local x = SQ * 8 + 16 + 30 + 20
     f.topIcon = f:CreateTexture(nil, "ARTWORK")
@@ -338,7 +369,7 @@ local function Build()
     local BUTTONS_Y = -178
     -- The move list gets its own space below the buttons
     f.movesTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.movesTitle:SetPoint("TOPLEFT", x, BUTTONS_Y - 64)
+    f.movesTitle:SetPoint("TOPLEFT", x, BUTTONS_Y - 90)
     f.movesTitle:SetText("Moves")
     f.moves = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.moves:SetPoint("TOPLEFT", f.movesTitle, "BOTTOMLEFT", 0, -4)
@@ -346,14 +377,17 @@ local function Build()
     f.moves:SetJustifyH("LEFT")
     f.moves:SetJustifyV("TOP")
 
-    f.resign = Button(f, "Resign", 86, function() G.Resign() end)
-    f.resign:SetPoint("TOPLEFT", x, BUTTONS_Y)
+    -- Resign sits a row below the practice buttons, so it is never under a click meant for them
+    f.resign = Button(f, "Resign", 86, function() CUI.ResignClick() end)
+    f.resign:SetPoint("TOPLEFT", x, BUTTONS_Y - 26)
     f.draw = Button(f, "Offer draw", 90, function() G.OfferDraw() end)
     f.draw:SetPoint("LEFT", f.resign, "RIGHT", 4, 0)
     f.barkeep = Button(f, "Play the barkeep", 180, function() G.Practice("barkeep") end)
     f.barkeep:SetPoint("TOPLEFT", x, BUTTONS_Y)
     f.solo = Button(f, "Practice board", 180, function() G.Practice("solo") end)
     f.solo:SetPoint("TOPLEFT", f.barkeep, "BOTTOMLEFT", 0, -4)
+    f.find = Button(f, "Challenge a guildie", 180, function() if ns.UI and ns.UI.OpenRoom then ns.UI.OpenRoom("chess") end end)
+    f.find:SetPoint("TOPLEFT", f.solo, "BOTTOMLEFT", 0, -4)
 
     f:SetScript("OnShow", function() Deselect() CUI.Refresh() end)
 end
@@ -397,4 +431,4 @@ function CUI.HidePrompt()
 end
 
 -- For tests
-function CUI._widgets() return { frame = f, squares = squares, promo = promo, prompt = prompt } end
+function CUI._widgets() BuildPromo() return { frame = f, squares = squares, promo = promo, prompt = prompt } end

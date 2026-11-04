@@ -918,7 +918,9 @@ test("chess tab: challenge an online guildie with a click", function()
     w:Advance(1)
     ok(p.ana.ns.ChessGame.Current() and p.bob.ns.ChessGame.Current(), "the game started")
     w:Advance(1)
-    ok(FindButton(p.ana, "Open board"), "Ana's tab now shows her game")
+    p.ana.ns.UI.Refresh()
+    w:Advance(0.1)
+    ok(UIW(p.ana).room.title:GetText():find("You vs", 1, true), "Ana's tab now shows her game")
     Clean(w)
 end)
 
@@ -1439,6 +1441,14 @@ test("workshop: the tab lists crafters, recipes, and search finds who can make i
     FindRow(ana, "Bob").btn:Click()
     w:Advance(0.1)
     ok(Shown(ana):find("Flask of the Titans", 1, true), "Bob's recipes by name")
+    -- Hover shows the game's recipe tooltip (reagents); a click offers the Wowhead link
+    local flask = FindRow(ana, "Flask of the Titans")
+    ok(flask.link and flask.link:find("^enchant:%d+$"), "the row links the recipe")
+    flask:GetScript("OnEnter")(flask)
+    flask:Click()
+    local box = ana.env.TheInnCopyBox
+    ok(box and box:IsShown(), "the copy box opens")
+    ok(box.url:find("^https://www.wowhead.com/classic/spell=%d+$"), "with a Wowhead link: " .. tostring(box.url))
     -- Search
     ui.search:SetText("titans")
     ui.search:GetScript("OnTextChanged")(ui.search, true)
@@ -1863,19 +1873,49 @@ test("rooms: the Scoreboard alone and in company, the Gossip board, settings", f
     Clean(w)
 end)
 
-test("rooms: the Chess room shows the position from your side", function()
+test("rooms: the Chess room is a lobby; you play in the board window", function()
     local w, p = Guild()
-    LoginAll(w, p.bob)
+    LoginAll(w, p.ana, p.bob)
     p.bob:Slash("")
     Room(p.bob, "chess")
     local room = UIW(p.bob).room
     ok(room.title:GetText():find("No game", 1, true))
+    ok(not room.squares, "no board in the tab")
+    -- Practice: the board window opens and is where the moves happen
     p.bob:Slash("chess solo")
     w:Advance(1)
     p.bob.ns.UI.Refresh()
     w:Advance(0.1)
     ok(room.title:GetText():find("Practice", 1, true))
-    ok(FindRow(p.bob, "No moves yet") and FindRow(p.bob, "No moves yet").btn:GetText() == "Open board")
+    local cw = p.bob.ns.ChessUI._widgets()
+    ok(cw.frame:IsShown(), "the board window opened")
+    local Ch = p.bob.ns.Chess
+    cw.squares[Ch.Parse("e2")]:Click()
+    cw.squares[Ch.Parse("e4")]:Click()
+    eq(p.bob.ns.ChessGame.Current().moves[1], "e2e4", "a move played in the board window")
+    -- Resign takes two clicks
+    cw.frame.resign:Click()
+    ok(not p.bob.ns.ChessGame.Current().over, "one click only arms it")
+    cw.frame.resign:Click()
+    ok(p.bob.ns.ChessGame.Current().over, "the second click resigns")
+    p.bob:Slash("chess clear")
+    w:Advance(0.1)
+    -- Challenge by typing a name
+    room.name:SetText("ana")
+    room.name:GetScript("OnTextChanged")(room.name, true)
+    room.name:GetScript("OnEnterPressed")(room.name)
+    w:Advance(1)
+    ok(p.ana:LogHas("challenges you to a game of chess"), "Ana gets a challenge typed by name")
+    p.ana:Slash("chess decline")
+    w:Advance(1)
+    -- Challenge your target
+    p.bob.state.target = "Ana"
+    w:Advance(1)
+    room.byTarget:Click()
+    w:Advance(1)
+    p.ana:Slash("chess accept")
+    w:Advance(1)
+    ok(p.bob.ns.ChessGame.Current() and p.bob.ns.ChessGame.Current().mode == "guild", "a game against the target")
     Clean(w)
 end)
 
