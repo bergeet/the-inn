@@ -77,6 +77,7 @@ local DEFAULT_SETTINGS = {
     sound = true,
     officerRank = 1,      -- guild rank index 0 (GM) .. N; this and lower count as officers
     obituaries = true,    -- show guildmates' deaths in the feed
+    craftTooltip = true,  -- "Craftable by: ..." on item tooltips
 }
 
 -- Counters kept per character (see Data.lua for what each one means)
@@ -96,6 +97,12 @@ local function InitDB()
         GuildAchDB.settings.version = 3
     end
     GuildAchDB.settings.innName = nil -- custom sign names were removed; the sign shows the guild's name
+    -- No saved data for this character (a reinstall, a new computer, a deleted
+    -- WTF folder, or simply a new character): try to get it back, first from
+    -- the account-wide file, then from guildmates. See "Restore" below.
+    local fresh = GuildAchCharDB == nil
+                  or ((GuildAchCharDB.rev or 0) == 0 and not GuildAchCharDB.firstScanDone)
+    ns.restore = fresh and { state = "pending" } or nil
     GuildAchCharDB = GuildAchCharDB or {}
     GuildAchCharDB.earned = GuildAchCharDB.earned or {}
     GuildAchCharDB.stats = GuildAchCharDB.stats or {}
@@ -269,14 +276,27 @@ function ns.ResolveGuild()
     for _, field in ipairs({ "members", "custom", "deleted", "grants", "revoked", "feed" }) do
         g[field] = g[field] or {}
     end
-    -- Mirror this character's unlocks into the guild view
+    ns.RebuildDefs()
+    -- Only this character's file was lost: the account-wide file still has
+    -- the guild's copy of our data. Take it back before overwriting it.
+    local saved = g.members[ns.me]
+    if ns.restore and ns.restore.state == "pending" and saved and (saved.rev or 0) > 0 then
+        ns.ApplyRestore({ earned = saved.earned, stats = saved.stats, rev = saved.rev })
+    end
+    ns.MirrorMe(g)
+    return g, changed
+end
+
+-- Copy this character's unlocks and counters into the guild view.
+function ns.MirrorMe(g)
+    g = g or ns.Guild()
+    if not g then return end
     local me = ns.Member(g, ns.me)
     for id, ts in pairs(ns.char.earned) do me.earned[id] = ts end
     me.stats = ns.SharedStats()
     me.rev = ns.char.rev
     me.lastSeen = Now()
-    ns.RebuildDefs()
-    return g, changed
+    if ns.Workshop then ns.Workshop.Mirror(me) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -441,8 +461,9 @@ function ns.ApplyStats(who, values, rev)
         local v = tonumber(values[k])
         if v and ns.OVERWRITE_STATS[k] then
             -- Newest wins: a direct update with a rev at least as new, or a relayed
-            -- value when we know nothing yet.
-            if (rev and rev >= m.rev) or m.stats[k] == nil then m.stats[k] = v end
+            -- value when we know nothing yet. (0 means the relayer didn't know
+            -- the rating either; a real rating is never 0.)
+            if v > 0 and ((rev and rev >= m.rev) or m.stats[k] == nil) then m.stats[k] = v end
         elseif v and v > (m.stats[k] or 0) then
             m.stats[k] = v
         end
@@ -460,6 +481,156 @@ function ns.Touch()
         me.rev = ns.char.rev
     end
     if ns.Comm then ns.Comm.QueueStats() end
+end
+
+-- ---------------------------------------------------------------------------
+-- Restore: getting a lost install back from guildmates
+--
+-- Everything the addon counts itself (deaths, jumps, duels, chess...) lives
+-- only in the saved variables. If this character has none, the first hello
+-- also asks "please send me my own data" (A). One guildmate who has a copy
+-- answers with the usual relay messages (N, then M), and for a minute those
+-- are accepted about ourselves. Unlocks come back with their original times
+-- and without any fanfare, counters take the highest value, the ratings take
+-- the restored value. Until the answer is in (or it's clear nobody has one),
+-- our own list and counters aren't sent, so nobody ever sees a fresh 1200.
+--
+-- restore.state: "pending" (fresh, not asked yet), "asking", "done"
+-- ---------------------------------------------------------------------------
+
+local RESTORE_WINDOW = 60  -- seconds after asking that answers are accepted
+local RESTORE_WAIT = 5     -- how long to hold our data back when nobody answers
+
+function ns.Restoring() return ns.restore ~= nil and ns.restore.state == "asking" end
+
+-- Our list and counters are held back while an answer may be on its way.
+function ns.HoldingData()
+    local r = ns.restore
+    return r ~= nil and r.state == "asking" and r.holding == true
+end
+
+local function ReleaseHold()
+    local r = ns.restore
+    if not r or not r.holding then return end
+    r.holding = false
+    if ns.Comm and ns.Guild() then
+        ns.Comm.SendMyList()
+        ns.Comm.SendStats()
+    end
+end
+
+local function RestorableId(g, id)
+    if ns.STATIC_IDS[id] then return true end
+    -- A guild-made achievement (ids look like c66f1a2b012): not deleted, not revoked
+    if not (ns.IsCustomId(id) and id:match("^c%x+$")) then return false end
+    return not (g and (g.deleted[id] or ns.IsRevoked(g, ns.me, id)))
+end
+
+-- data: { earned = { id = ts }, stats = { short key = value }, rev }
+-- source: the guildmate it came from (nil: this computer's account-wide file)
+function ns.ApplyRestore(data, source)
+    local r = ns.restore
+    if not r or r.state == "done" then return end
+    r.state = "done"
+    local g = ns.Guild()
+    local added = 0
+    for id, ts in pairs(data.earned or {}) do
+        ts = tonumber(ts)
+        if ts and RestorableId(g, id) then
+            local have = ns.char.earned[id]
+            if not have then added = added + 1 end
+            if not have or ts < have then ns.char.earned[id] = ts end -- keep the original date
+        end
+    end
+    local s = ns.char.stats
+    for k, field in pairs(ns.STAT_KEYS) do
+        local v = tonumber((data.stats or {})[k])
+        if v and ns.OVERWRITE_STATS[k] then
+            if v > 0 then s[field] = v end
+        elseif v and v > (s[field] or 0) then
+            s[field] = v
+        end
+    end
+    if s.chessElo then s.chessEloPeak = math.max(s.chessEloPeak or 0, s.chessElo) end
+    if s.duelElo then s.duelEloPeak = math.max(s.duelEloPeak or 0, s.duelElo) end
+    local rev = tonumber(data.rev)
+    if rev and rev > (ns.char.rev or 0) then ns.char.rev = rev end
+
+    ns.Print(string.format("restored %d achievement%s and your counters from %s.", added, added == 1 and "" or "s",
+                           source and ns.BaseName(source) or "this computer's saved data"))
+    if g and ns.ready then
+        if ns.scanned then ns.CheckAll(true) end -- anything the restored counters reach, quietly
+        ns.Touch()                               -- a newer rev, so our restored values win everywhere
+        ns.MirrorMe(g)
+    end
+    ReleaseHold()
+    if ns.UI then ns.UI.Refresh() end
+end
+
+-- Called by the first hello. Returns true while our own data is held back.
+function ns.StartRestore()
+    local r = ns.restore
+    if not r then return false end
+    if r.state == "asking" then return r.holding end
+    if r.state ~= "pending" or not ns.Guild() or not ns.Comm then return false end
+    r.state, r.holding, r.askedAt, r.holdUntil = "asking", true, GetTime(), GetTime() + RESTORE_WAIT
+    ns.Comm.Send("A", 1)
+    local ticker
+    ticker = C_Timer.NewTicker(1, function()
+        if r.state ~= "asking" then
+            ticker:Cancel()
+            return
+        end
+        local now = GetTime()
+        if now - r.askedAt >= RESTORE_WINDOW then
+            if r.from then
+                ns.ApplyRestore(r, r.from) -- the answer stopped halfway: keep what arrived
+            else
+                r.state = "done"
+                ReleaseHold()
+            end
+            ticker:Cancel()
+        elseif r.holding and now >= r.holdUntil then
+            ReleaseHold()
+        end
+    end)
+    return true
+end
+
+-- A guildmate came online while we're still waiting: maybe they have a copy.
+local lastAsk = -100
+function ns.AskAgain()
+    local r = ns.restore
+    if not ns.Restoring() or r.from or GetTime() - lastAsk < 3 then return end
+    lastAsk = GetTime()
+    r.holding, r.holdUntil = true, GetTime() + RESTORE_WAIT
+    ns.Comm.Send("A", 1)
+end
+
+-- The answer: accepted from one guildmate only, while the window is open.
+local function RestoreFrom(sender)
+    local r = ns.restore
+    if not ns.Restoring() then return nil end
+    if r.from and r.from ~= sender then return nil end
+    if not r.from then
+        r.from, r.earned, r.stats = sender, {}, {}
+        r.holding, r.holdUntil = true, GetTime() + 30 -- it's on its way
+    end
+    return r
+end
+
+function ns.RestoreStats(sender, values)
+    local r = RestoreFrom(sender)
+    if r then r.stats = values end
+end
+
+-- items: { { id, ts }, ... }; last: the final part of the list
+function ns.RestoreEarned(sender, rev, last, items)
+    local r = RestoreFrom(sender)
+    if not r then return end
+    for _, it in ipairs(items) do r.earned[it[1]] = it[2] end
+    if rev and rev > (r.rev or 0) then r.rev = rev end
+    if last then ns.ApplyRestore(r, sender) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -484,38 +655,41 @@ end
 
 local SECONDARY_BY_NAME = { ["Cooking"] = 185, ["Fishing"] = 356, ["First Aid"] = 129 }
 
--- Returns a list of { name, rank, skillLine, primary }
+-- Returns a list of { name, rank, max, skillLine, primary }, and whether the
+-- list is complete (on Classic Era a collapsed header in the Skills pane
+-- hides the professions under it).
 function ns.GetProfessions()
-    local out = {}
+    local out, complete = {}, true
     if GetProfessions and GetProfessionInfo then
         local slots = { GetProfessions() }
         local n = select("#", GetProfessions())
         for i = 1, n do
             local index = slots[i]
             if index then
-                local ok, name, _, rank, _, _, _, skillLine = pcall(GetProfessionInfo, index)
+                local ok, name, _, rank, max, _, _, skillLine = pcall(GetProfessionInfo, index)
                 if ok and name then
-                    out[#out + 1] = { name = name, rank = rank or 0, skillLine = skillLine,
+                    out[#out + 1] = { name = name, rank = rank or 0, max = max, skillLine = skillLine,
                                       primary = (i <= 2) and not SECONDARY_BY_NAME[name] }
                 end
             end
         end
-        if #out > 0 then return out end
+        if #out > 0 then return out, true end
     end
     -- Classic Era: professions live in the skill list (Character > Skills)
     if GetNumSkillLines and GetSkillLineInfo then
         for i = 1, GetNumSkillLines() do
-            local name, header, _, rank, _, _, _, abandonable = GetSkillLineInfo(i)
+            local name, header, expanded, rank, _, _, max, abandonable = GetSkillLineInfo(i)
+            if name and header and not expanded then complete = false end
             if name and not header then
                 local secondary = SECONDARY_BY_NAME[name]
                 if abandonable or secondary then
-                    out[#out + 1] = { name = name, rank = rank or 0, skillLine = secondary,
+                    out[#out + 1] = { name = name, rank = rank or 0, max = max, skillLine = secondary,
                                       primary = (abandonable and not secondary) and true or false }
                 end
             end
         end
     end
-    return out
+    return out, complete
 end
 
 function ns.Snapshot()
@@ -809,7 +983,7 @@ function ns.ApplyPendingGrants(id)
     local g = ns.Guild()
     if not g or not ns.byId[id] then return end
     for target, ids in pairs(g.grants) do
-        if ids[id] and ns.SameName(target, ns.me) then ns.Earn(id, { ts = ids[id] }) end
+        if ids[id] and ns.SameName(target, ns.me) then ns.Earn(id, { ts = ids[id], retro = ns.HoldingData() }) end
     end
 end
 
@@ -862,6 +1036,7 @@ local function Startup()
     if ns.Trackers then pcall(ns.Trackers.OnStartup) end
     if ns.ChessGame then pcall(ns.ChessGame.Start) end
     if ns.UI then pcall(ns.UI.UpdateMinimapButton) end
+    if ns.Workshop then pcall(ns.Workshop.Start) end
     if g then
         if ns.Comm then ns.Comm.Hello() end
     elseif IsInGuild and IsInGuild() then

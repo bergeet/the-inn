@@ -1049,6 +1049,423 @@ test("guildmates who are never online together still see each other (relay)", fu
     Clean(w)
 end)
 
+-- ---------------------------------------------------------------------------
+-- Restoring a lost install
+-- ---------------------------------------------------------------------------
+
+-- Bob plays a while with Ana online: dies three times at level 9 (which earns
+-- "dieLow", something the game can't tell us again), dings 10, plays chess.
+local function BobHistory(w, p)
+    LoginAll(w, p.ana, p.bob)
+    for _ = 1, 3 do
+        p.bob:Die()
+        w:Advance(1)
+        p.bob:Revive()
+        w:Advance(70)
+    end
+    p.bob.state.level = 10
+    p.bob:Fire("PLAYER_LEVEL_UP", 10)
+    p.bob.ns.char.stats.chessElo = 1400
+    p.bob.ns.char.stats.chessWins = 4
+    p.bob.ns.char.stats.jumps = 250
+    p.bob.ns.Touch()
+    w:Advance(10)
+    local view = p.ana:ViewOf(p.bob)
+    eq(view.stats.ce, 1400, "Ana knows Bob's rating")
+    ok(view.earned.dieLow and view.earned.lvl10, "and his unlocks")
+    return view
+end
+
+-- Ana's view of Bob must never go backwards while Bob restores.
+local function WatchAna(w, p, seconds)
+    for _ = 1, seconds * 4 do
+        w:Advance(0.25)
+        local v = p.ana.ns.Guild() and p.ana:ViewOf(p.bob) -- (nil until Ana's guild loads)
+        if v then
+            eq(v.stats.ce, 1400, "Ana never sees Bob at a fresh rating")
+            ok((v.stats.d or 0) >= 3 and (v.stats.j or 0) >= 250, "Ana never sees lower counters")
+            ok(v.earned.dieLow, "Ana keeps Bob's unlocks")
+        end
+    end
+end
+
+test("restore: a lost install comes back from a guildmate, quietly", function()
+    local w, p = Guild()
+    local before = BobHistory(w, p)
+    local dieLowAt = before.earned.dieLow
+    local oldRev = p.bob.ns.char.rev
+    local feedBefore = #p.ana:Guild().feed
+    p.bob:Logout()
+    p.bob.saved = {} -- new computer: no WTF folder at all
+    p.bob.sent, p.bob.chat = {}, {}
+    p.bob:ClearLog()
+    p.ana:ClearLog()
+    w.latency = 1 -- a slow evening
+    p.bob:Login()
+    -- Until the answer is in, Bob keeps his (empty) list and counters to himself
+    while not p.bob:LogHas("restored") and w.now < 1e9 do
+        local sent = #p.bob:Sent("S") + #p.bob:Sent("L")
+        w:Advance(0.25)
+        eq(sent, 0, "nothing of Bob's goes out before the restore")
+        ok(p.bob.loginAt + 20 > w.now, "the restore arrives")
+    end
+    WatchAna(w, p, 40)
+    w.latency = 0.05
+
+    local bob = p.bob
+    ok(bob:Earned("dieLow"), "the unlock the game can't report came back")
+    eq(bob.ns.char.earned.dieLow, dieLowAt, "with its original date")
+    eq(bob.ns.char.stats.deaths, 3, "deaths")
+    eq(bob.ns.char.stats.chessElo, 1400, "chess rating")
+    eq(bob.ns.char.stats.chessWins, 4, "chess wins")
+    eq(bob.ns.char.stats.jumps, 250, "jumps")
+    ok(bob.ns.char.rev > oldRev, "a newer rev, so the restored values win")
+    ok(bob:LogHas("restored") and bob:LogHas("from Ana"), "says where it came from")
+    eq(#bob:Sent("A"), 1, "asked once")
+    -- Nothing was announced
+    eq(#bob:Sent("E"), 0, "no unlock messages")
+    eq(#bob.chat, 0, "no guild chat")
+    ok(not bob:LogHas("You earned"), "no unlock lines or alerts")
+    ok(not p.ana:LogHas("Bob earned"), "Ana saw nothing new")
+    eq(#p.ana:Guild().feed, feedBefore, "no gossip")
+    eq(p.ana:ViewOf(p.bob).stats.ce, 1400)
+    -- After the window, data about yourself is ignored again
+    p.cid:Login()
+    w:Advance(30)
+    p.cid:Raw("N\tBob-Forever\td=99,ce=900")
+    w:Advance(2)
+    eq(bob.ns.char.stats.deaths, 3, "ignored")
+    eq(bob.ns.char.stats.chessElo, 1400, "ignored")
+    Clean(w)
+end)
+
+test("restore: a character with its own data ignores answers about itself", function()
+    local w, p = Guild()
+    BobHistory(w, p)
+    p.bob.sent = {} -- (his very first login did ask: a new character has no data either)
+    p.cid:Login()
+    w:Advance(12)
+    p.cid:Raw("N\tBob-Forever\td=99,ce=900,j=5")
+    p.cid:Raw("M\tBob-Forever\t1\t1\tdieMax:1793700000")
+    w:Advance(2)
+    eq(p.bob.ns.char.stats.deaths, 3)
+    eq(p.bob.ns.char.stats.chessElo, 1400)
+    ok(not p.bob:Earned("dieMax"))
+    eq(#p.bob:Sent("A"), 0, "never asks")
+    Clean(w)
+end)
+
+test("restore: only the character file was lost, so the account file has it", function()
+    local w, p = Guild()
+    BobHistory(w, p)
+    p.bob:Logout()
+    p.ana:Logout()
+    p.bob.saved.GuildAchCharDB = nil -- the account-wide GuildAchDB is still there
+    p.bob.sent = {}
+    p.bob:Login()
+    w:Advance(15)
+    ok(p.bob:Earned("dieLow"))
+    eq(p.bob.ns.char.stats.deaths, 3)
+    eq(p.bob.ns.char.stats.chessElo, 1400)
+    ok(p.bob:LogHas("this computer's saved data"))
+    eq(#p.bob:Sent("A"), 0, "no need to ask anyone")
+    eq(#p.bob:Sent("E"), 0)
+    Clean(w)
+end)
+
+test("restore: a guildmate with a copy who logs in a bit later still answers", function()
+    local w, p = Guild()
+    BobHistory(w, p)
+    p.bob:Logout()
+    p.ana:Logout()
+    p.bob.saved = {}
+    p.cid:Login() -- has never seen Bob
+    w:Advance(12)
+    p.bob:Login()
+    w:Advance(20)
+    eq(p.bob.ns.char.stats.deaths, 0, "nobody had a copy yet")
+    p.ana:Login()
+    WatchAna(w, p, 20)
+    eq(p.bob.ns.char.stats.deaths, 3, "Ana's copy arrived")
+    eq(p.bob.ns.char.stats.chessElo, 1400)
+    eq(p.cid:ViewOf(p.bob).stats.ce, 1400, "Cid gets the restored rating too")
+    Clean(w)
+end)
+
+test("restore: revoked custom achievements stay revoked", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob, p.cid)
+    p.ana:Slash("create 10 Tab Dodger | Left without paying")
+    w:Advance(2)
+    local id = CustomIdByName(p.ana, "Tab Dodger")
+    p.ana:Slash("grant Bob " .. id)
+    w:Advance(3)
+    ok(p.bob:Earned(id))
+    p.cid:Logout() -- Cid's copy of Bob still has it
+    p.ana:Slash("revoke Bob " .. id)
+    w:Advance(3)
+    ok(not p.bob:Earned(id))
+    p.bob:Logout()
+    p.bob.saved = {}
+    p.cid:Login()
+    w:Advance(12)
+    p.bob:Login()
+    w:Advance(40)
+    ok(not p.bob:Earned(id), "not restored")
+    ok(not p.ana:ViewOf(p.bob).earned[id], "and not shown to anyone")
+    Clean(w)
+end)
+
+-- ---------------------------------------------------------------------------
+-- The Workshop: professions and recipes
+-- ---------------------------------------------------------------------------
+
+local ALCHEMY = "171"
+
+-- Bob's Alchemy window. collapsed: the Potions category is folded up.
+local function AlchemyWindow(opts)
+    opts = opts or {}
+    local lines = {
+        { header = "Elixirs" },
+        { spell = 2329, item = 2454 },
+        { header = "Potions", expanded = not opts.collapsed },
+        { spell = 2330 }, { spell = 3170 },
+    }
+    if opts.flask then
+        table.insert(lines, 2, { header = "Flasks" })
+        table.insert(lines, 3, { spell = 17635, item = 13510 })
+    end
+    return { name = "Alchemy", skillLine = 171, rank = opts.rank or 125, max = 150, lines = lines,
+             unlearned = { 17636 }, linked = opts.linked }
+end
+
+local function AlchemistGuild()
+    local w, p = Guild()
+    p.bob.state.profs = { prof1 = { name = "Alchemy", rank = 125, skillLine = 171 },
+                          cooking = { name = "Cooking", rank = 40, skillLine = 185 } }
+    LoginAll(w, p.ana, p.bob)
+    return w, p
+end
+
+local function Recipes(c, other)
+    local v = c:ViewOf(other)
+    local e = v and v.profs and v.profs[ALCHEMY]
+    local list = {}
+    for id in pairs(e and e.recipes or {}) do list[#list + 1] = id end
+    table.sort(list)
+    return table.concat(list, ","), e
+end
+
+test("workshop: opening a profession window shares skill and recipes", function()
+    local w, p = AlchemistGuild()
+    local _, e = Recipes(p.ana, p.bob)
+    ok(e, "Ana knows Bob is an alchemist from his hello")
+    eq(e.rank, 125)
+    ok(p.ana:ViewOf(p.bob).profs["185"], "and a cook")
+    eq(e.n, 0, "no recipes until he opens the window")
+
+    p.bob:OpenProfession(AlchemyWindow())
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(4)
+    local list
+    list, e = Recipes(p.ana, p.bob)
+    eq(list, "2329,2330,3170", "Ana has his recipes a few seconds after he closed it (not the unlearned one)")
+    eq(e.n, 3)
+    Clean(w)
+end)
+
+test("workshop: guildies who are never online with you get your recipes through the relay", function()
+    local w, p = AlchemistGuild()
+    p.bob:OpenProfession(AlchemyWindow())
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    p.bob:Logout()
+    w:Advance(60)
+    p.cid:Login()
+    w:Advance(25)
+    eq((Recipes(p.cid, p.bob)), "2329,2330,3170", "Cid got Bob's recipes from Ana")
+    eq(p.cid:ViewOf(p.bob).profs[ALCHEMY].rank, 125)
+    Clean(w)
+end)
+
+test("workshop: a new recipe sends just the change, and a hello sends no lists", function()
+    local w, p = AlchemistGuild()
+    p.cid:Login()
+    w:Advance(12)
+    p.bob:OpenProfession(AlchemyWindow())
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    p.cid:Logout() -- Cid misses the next change
+    p.bob.sent = {}
+    p.bob:OpenProfession(AlchemyWindow({ flask = true }))
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    local b = p.bob:Sent("B")
+    eq(#b, 1, "one message")
+    local f = {}
+    for x in (b[1] .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = x end
+    ok(tonumber(f[5]) > 0, "relative to the version the guild had")
+    eq(f[7], "17635", "with only the new recipe")
+    eq((Recipes(p.ana, p.bob)), "17635,2329,2330,3170", "Ana is up to date")
+
+    -- Logging in again: a version per profession, no lists
+    p.bob:Logout()
+    p.bob.sent = {}
+    p.bob:Login()
+    w:Advance(20)
+    eq(#p.bob:Sent("B"), 0, "nothing to resend")
+    eq(#p.bob:Sent("P"), 1, "just the profession summary")
+    -- Cid, who missed the change, asks for the whole list and gets it
+    p.cid:Login()
+    w:Advance(20)
+    eq((Recipes(p.cid, p.bob)), "17635,2329,2330,3170")
+    Clean(w)
+end)
+
+test("workshop: collapsed categories don't wipe known recipes", function()
+    local w, p = AlchemistGuild()
+    p.bob:OpenProfession(AlchemyWindow())
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    p.bob:OpenProfession(AlchemyWindow({ collapsed = true, flask = true }))
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    local mine = p.bob.ns.char.profs[ALCHEMY]
+    eq((Recipes(p.ana, p.bob)), "17635,2329,2330,3170", "kept the hidden ones, added the new one")
+    if w.flavor == "era" then
+        ok(mine.partial, "knows the list may be missing something")
+        p.bob:Slash("")
+        for _, tab in ipairs(p.bob.ns.UI._widgets().tabs) do if tab.key == "workshop" then tab:Click() end end
+        w:Advance(0.1)
+        local hint = false
+        for _, l in ipairs(p.bob.ns.UI._widgets().lines) do
+            if l:IsShown() and (l.text:GetText() or ""):find("everything expanded", 1, true) then hint = true end
+        end
+        ok(hint, "and says so on the Workshop tab")
+        p.bob:OpenProfession(AlchemyWindow({ flask = true }))
+        w:Advance(1)
+        ok(not mine.partial, "everything visible again")
+    end
+    Clean(w)
+end)
+
+test("workshop: Enchanting uses the craft window on Classic Era", function()
+    local w, p = Guild()
+    p.bob.state.profs = { prof1 = { name = "Enchanting", rank = 60, skillLine = 333 } }
+    LoginAll(w, p.ana, p.bob)
+    p.bob:OpenProfession({ craft = true, name = "Enchanting", rank = 60, max = 75,
+                           lines = { { header = "Bracer" }, { spell = 7418 }, { header = "Chest" }, { spell = 7420 } } })
+    w:Advance(1)
+    p.bob:CloseProfession()
+    -- The hunter's Beast Training also uses the craft window, with no skill line
+    p.bob:OpenProfession({ craft = true, lines = { { spell = 2550 } } })
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    local e = p.ana:ViewOf(p.bob).profs["333"]
+    ok(e and e.recipes["7418"] and e.recipes["7420"], "Ana sees both enchants")
+    eq(e.n, 2, "and nothing from Beast Training")
+    Clean(w)
+end, "era")
+
+test("workshop: someone else's linked profession isn't recorded as yours", function()
+    local w, p = AlchemistGuild()
+    p.bob:OpenProfession(AlchemyWindow({ linked = true, flask = true }))
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    eq(p.bob.ns.char.profs[ALCHEMY].n, 0)
+    Clean(w)
+end, "forever")
+
+test("workshop: dropping a profession takes it off the board", function()
+    local w, p = AlchemistGuild()
+    ok(p.ana:ViewOf(p.bob).profs[ALCHEMY])
+    p.bob.state.profs.prof1 = nil
+    p.bob:Fire("SKILL_LINES_CHANGED")
+    w:Advance(15)
+    ok(not p.ana:ViewOf(p.bob).profs[ALCHEMY], "gone")
+    ok(p.ana:ViewOf(p.bob).profs["185"], "still a cook")
+    Clean(w)
+end)
+
+test("workshop: the tab lists crafters, recipes, and search finds who can make it", function()
+    local w, p = AlchemistGuild()
+    p.bob:OpenProfession(AlchemyWindow({ flask = true }))
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    local ana = p.ana
+    ana:Slash("")
+    local ui = ana.ns.UI._widgets()
+    for _, tab in ipairs(ui.tabs) do if tab.key == "workshop" then tab:Click() end end
+    w:Advance(0.1)
+    local function Shown()
+        local out = {}
+        for _, l in ipairs(ui.lines) do
+            if l:IsShown() then out[#out + 1] = (l.text:GetText() or "") .. " | " .. (l.right:GetText() or "") end
+        end
+        return table.concat(out, "\n")
+    end
+    local function Side(label)
+        for _, b in ipairs(ui.side) do
+            if b:IsShown() and b.label:GetText() == label then return b end
+        end
+    end
+    ok(Side("Alchemy") and Side("Cooking"), "a sidebar entry per profession")
+    Side("Alchemy"):Click()
+    w:Advance(0.1)
+    ok(Shown():find("Bob", 1, true) and Shown():find("4 recipes", 1, true), "Bob, with his recipe count")
+    -- His recipe list
+    for _, l in ipairs(ui.lines) do
+        if l:IsShown() and l.btn:IsShown() then l.btn:Click() break end
+    end
+    w:Advance(0.1)
+    ok(Shown():find("Flask of the Titans", 1, true), "Bob's recipes by name")
+    -- Search
+    ui.search:SetText("titans")
+    ui.search:GetScript("OnTextChanged")(ui.search, true)
+    w:Advance(0.1)
+    local shown = Shown()
+    ok(shown:find("Flask of the Titans", 1, true) and shown:find("Bob", 1, true), "who can make it:\n" .. shown)
+    ok(not shown:find("Healing", 1, true), "only matches")
+    eq(#ana.ns.Workshop.Search("potion"), 2, "two potions")
+    ui.search:SetText("zzz")
+    ui.search:GetScript("OnTextChanged")(ui.search, true)
+    w:Advance(0.1)
+    ok(Shown():find("Nobody in the guild", 1, true))
+    Clean(w)
+end)
+
+test("workshop: item tooltips say who can craft it", function()
+    local w, p = AlchemistGuild()
+    p.bob:OpenProfession(AlchemyWindow({ flask = true }))
+    w:Advance(1)
+    p.bob:CloseProfession()
+    w:Advance(5)
+    local tt = p.ana.env.GameTooltip
+    local added = {}
+    tt.AddLine = function(_, text) added[#added + 1] = text end
+    tt.GetItem = function() return "Flask of the Titans", "|cffffffff|Hitem:13510::::::::60:::::|h[Flask of the Titans]|h|r" end
+    tt:GetScript("OnTooltipSetItem")(tt)
+    eq(added[1], "Craftable by: Bob")
+    added = {}
+    tt.GetItem = function() return "Linen Cloth", "|cffffffff|Hitem:2589::::::::60:::::|h[Linen Cloth]|h|r" end
+    tt:GetScript("OnTooltipSetItem")(tt)
+    eq(#added, 0, "nothing for things nobody crafts")
+    p.ana.ns.settings.craftTooltip = false
+    tt.GetItem = function() return "Flask of the Titans", nil end
+    tt:GetScript("OnTooltipSetItem")(tt)
+    eq(#added, 0, "can be switched off")
+    Clean(w)
+end)
+
 test("data saved by older versions still loads", function()
     local w, p = Guild()
     local ts = w:ServerTime() - 86400
@@ -1376,7 +1793,26 @@ local ALLOWED_GLOBALS = {
     "GuildAchDB", "GuildAchCharDB", "SLASH_GUILDACHIEVEMENTS1", "SLASH_GUILDACHIEVEMENTS2", "SLASH_GUILDACHIEVEMENTS3",
     -- Messaging: hidden guild addon channel, and the opt-in guild chat line
     "C_ChatInfo", "SendChatMessage",
+    -- 0.7 Workshop: reading the player's own profession window while they have
+    -- it open (never opening, expanding or crafting; see the test below)
+    "C_TradeSkillUI", "IsTradeSkillLinked", "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo",
+    "GetTradeSkillRecipeLink", "GetTradeSkillItemLink",
+    "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "GetCraftRecipeLink", "GetCraftItemLink",
+    "C_Spell", "GetSpellInfo", "C_Item", "GetItemInfo", -- recipe names, for search
+    "ItemRefTooltip", "TooltipDataProcessor",           -- the "Craftable by" tooltip line (post-hook)
 }
+
+-- Names that must never appear anywhere in the addon's code, not even as a
+-- field of an allowed namespace (C_TradeSkillUI also has crafting calls).
+local FORBIDDEN_NAMES = {
+    "CraftRecipe", "RecraftRecipe", "DoTradeSkill", "DoCraft", "CastSpell", "CastSpellByName", "CastSpellByID",
+    "UseItemByName", "UseContainerItem", "OpenTradeSkill", "CloseTradeSkill", "CloseCraft",
+    "ExpandTradeSkillSubClass", "CollapseTradeSkillSubClass", "ExpandCraftSkillLine", "CollapseCraftSkillLine",
+    "SetTradeSkillSubClassFilter", "SetTradeSkillInvSlotFilter", "TradeSkillOnlyShowMakeable",
+    "SetRecipeItemNameFilter", "SetOnlyShowLearnedRecipes", "SetOnlyShowMakeableRecipes",
+    "SelectTradeSkill", "SelectCraft", "RunMacro", "RunMacroText", "RunScript",
+}
+
 
 test("addon only uses approved game APIs", function()
     local allowed = {}
@@ -1398,6 +1834,25 @@ test("addon only uses approved game APIs", function()
         end
     end
     ok(#bad == 0, "unapproved globals (review, then add to ALLOWED_GLOBALS if safe):\n  " .. table.concat(bad, "\n  "))
+end)
+
+test("addon never crafts, casts, or changes the profession window", function()
+    local forbidden = {}
+    for _, n in ipairs(FORBIDDEN_NAMES) do forbidden[n] = true end
+    local bad = {}
+    for line in io.lines(Sim.ADDON_DIR .. "/TheInn.toc") do
+        local file = line:gsub("\r", ""):match("^%s*(.-)%s*$")
+        if file ~= "" and not file:find("^#") then
+            local pipe = assert(io.popen("luajit -bl '" .. Sim.ADDON_DIR .. "/" .. file .. "'"))
+            for l in pipe:lines() do
+                for name in l:gmatch('"([%w_]+)"') do
+                    if forbidden[name] then bad[#bad + 1] = file .. ": " .. name end
+                end
+            end
+            pipe:close()
+        end
+    end
+    ok(#bad == 0, "forbidden names in the code:\n  " .. table.concat(bad, "\n  "))
 end)
 
 -- ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 ## Interface: 11509, 16001
 ## Title: The Inn
-## Notes: Your guild's tavern: achievements, a scoreboard and gossip, shared with your guildmates. /inn
-## Version: 0.6.4
+## Notes: Your guild's tavern: achievements, a scoreboard, gossip and a workshop, shared with your guildmates. /inn
+## Version: 0.7.0
 ## IconTexture: Interface\AddOns\TheInn\Media\Icon
 ## SavedVariables: GuildAchDB
 ## SavedVariablesPerCharacter: GuildAchCharDB
@@ -10,6 +10,7 @@ Data.lua
 Core.lua
 Trackers.lua
 Comm.lua
+Workshop.lua
 Chess.lua
 ChessGame.lua
 ChessUI.lua

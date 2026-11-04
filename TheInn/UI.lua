@@ -15,7 +15,7 @@ local W, H = 720, 600
 local SIGN_W, SIGN_H, SIGN_RISE = 320, 160, 46 -- the sign pokes out above the window
 local HEADER_H = 112
 local TAB_Y = HEADER_H + 20
-local TAB_H, SIDE_W = 26, 150
+local TAB_H, TAB_W, SIDE_W = 26, 132, 150
 local BODY_TOP = TAB_Y + TAB_H + 8
 local LIST_X = 14 + SIDE_W + 10
 local LIST_W = W - LIST_X - 34
@@ -292,6 +292,7 @@ end
 
 local f, scroll, content
 local view, category, board, feedFilter = "ach", "All", "points", "all"
+local workshopProf, workshopWho, searchText = nil, nil, ""
 local achRows, lineRows, sideButtons, tabs = {}, {}, {}, {}
 local Render -- forward
 
@@ -837,6 +838,117 @@ local function RenderChess()
     content:SetHeight(math.max(1, n * LINE_H))
 end
 
+-- ---------------------------------------------------------------------------
+-- The Workshop: professions, recipes, and who can make what
+-- ---------------------------------------------------------------------------
+
+local function IsOnline(name)
+    if name == ns.me then return true end
+    local e = ns.RosterEntry(name)
+    return e ~= nil and e.online == true
+end
+
+local function ClearSearch()
+    searchText = ""
+    if f.search then f.search:SetText("") end
+end
+
+local function RenderWorkshop()
+    local Wk = ns.Workshop
+    local n = 0
+    local function line(o)
+        n = n + 1
+        SetLine(GetLine(n), o)
+    end
+    local crafters = Wk.Crafters()
+    local keys = {}
+    for key in pairs(crafters) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b) return Wk.Name(a) < Wk.Name(b) end)
+    if not crafters[workshopProf] then workshopProf, workshopWho = keys[1], nil end
+    local searching = #searchText >= 2
+    for i, key in ipairs(keys) do
+        SetSide(i, Wk.Icon(key), Wk.Name(key), tostring(#crafters[key]), key == workshopProf and not searching,
+                function()
+                    workshopProf, workshopWho = key, nil
+                    ClearSearch()
+                end)
+    end
+
+    local g = ns.Guild()
+    local m = workshopWho and g and g.members[workshopWho]
+    local shown = m and m.profs and m.profs[workshopProf]
+    if workshopWho and not shown then workshopWho = nil end
+
+    if searching then
+        local results = Wk.Search(searchText, 100)
+        SetHeader("Who can make it?", "Recipes matching \"" .. searchText .. "\". Ask them nicely.")
+        if #results == 0 then line({ text = GREY .. "Nobody in the guild knows a recipe like that. Yet.|r" }) end
+        for _, r in ipairs(results) do
+            line({ icon = Wk.Icon(r.key), text = GOLD .. r.name .. "|r", right = NameList(r.who, 3), rightW = 250 })
+        end
+        if results.more then line({ text = GREY .. "...and " .. results.more .. " more. Try a longer search.|r" }) end
+    elseif shown then
+        local list = {}
+        for id in pairs(shown.recipes or {}) do list[#list + 1] = { id = id, name = Wk.RecipeName(id) } end
+        table.sort(list, function(a, b)
+            if (a.name ~= nil) ~= (b.name ~= nil) then return a.name ~= nil end
+            if a.name and b.name and a.name ~= b.name then return a.name < b.name end
+            return a.id < b.id
+        end)
+        SetHeader(ClassColored(workshopWho) .. "'s " .. Wk.Name(workshopProf),
+                  string.format("%d recipe%s known, skill %d/%d.", #list, #list == 1 and "" or "s",
+                                shown.rank or 0, shown.max or 0))
+        line({ text = GREY .. "Back to everyone with " .. Wk.Name(workshopProf) .. "|r", button = "Back",
+               onClick = function()
+                   workshopWho = nil
+                   Render()
+               end })
+        for _, r in ipairs(list) do
+            line({ icon = Wk.Icon(workshopProf), text = r.name or (GREY .. "Recipe #" .. r.id .. "|r") })
+        end
+    elseif workshopProf then
+        local name = Wk.Name(workshopProf)
+        SetHeader(name, "Who has it, how far along, and how many recipes they've shared.")
+        local list = crafters[workshopProf]
+        table.sort(list, function(a, b)
+            local oa, ob = IsOnline(a.name), IsOnline(b.name)
+            if oa ~= ob then return oa end
+            if (a.e.rank or 0) ~= (b.e.rank or 0) then return (a.e.rank or 0) > (b.e.rank or 0) end
+            return a.name < b.name
+        end)
+        for i, c in ipairs(list) do
+            local e = c.e
+            local who = ClassColored(c.name)
+            if c.name == ns.me then who = who .. GREY .. " (you)|r"
+            elseif not IsOnline(c.name) then who = who .. GREY .. "  offline|r" end
+            local recipes = (e.n or 0) > 0 and (e.n .. " recipe" .. (e.n == 1 and "" or "s")) or (GREY .. "no recipes yet|r")
+            line({ rank = GOLD .. i .. ".|r", text = who, rightW = 250,
+                   right = string.format("%s%d|r/%d    %s", GOLD, e.rank or 0, e.max or 0, recipes),
+                   barFrac = (e.max or 0) > 0 and math.min(1, (e.rank or 0) / e.max) or 0,
+                   button = (e.n or 0) > 0 and "Recipes" or nil,
+                   onClick = function()
+                       workshopWho = c.name
+                       scroll:SetVerticalScroll(0)
+                       Render()
+                   end })
+        end
+        local mine = ns.char.profs and ns.char.profs[workshopProf]
+        if mine and (mine.n or 0) == 0 then
+            line({})
+            line({ text = GREY .. "Open your " .. name .. " window once to share your recipes.|r" })
+        elseif mine and mine.partial then
+            line({})
+            line({ text = GOLD .. "Some of your categories were collapsed, so new recipes in them were missed.|r" })
+            line({ text = GOLD .. "Open your profession window with everything expanded to update.|r" })
+        end
+    else
+        SetHeader("The Workshop", "Who can craft what. Open your profession window to share your recipes.")
+        line({ text = GREY .. "No professions on the board yet. Open your profession window once,|r" })
+        line({ text = GREY .. "and get your guildies to install the addon.|r" })
+    end
+    content:SetHeight(math.max(1, n * LINE_H))
+end
+
 local SETTINGS = {
     { key = "announce",     label = "Post my unlocks in guild chat",
       note = "One line per unlock (or burst), at most every 10 seconds." },
@@ -846,6 +958,8 @@ local SETTINGS = {
       note = "They still count on the Scoreboard either way." },
     { key = "minimapButton", label = "Show the minimap button",
       after = function() UI.UpdateMinimapButton() end },
+    { key = "craftTooltip", label = "Show who can craft an item in its tooltip",
+      note = "\"Craftable by: ...\" from the recipes your guildies have shared." },
     { key = "sound",        label = "Play sounds",
       note = "The fanfare for your unlocks, and the chime for a chess challenge." },
 }
@@ -916,9 +1030,11 @@ Render = function()
         if selected then t.text:SetTextColor(1, 0.85, 0.3) else t.text:SetTextColor(0.85, 0.8, 0.7) end
     end
     f.chalk:SetShown(view == "boards")
+    f.search:SetShown(view == "workshop")
     if view == "ach" then RenderAchievements()
     elseif view == "boards" then RenderBoards()
     elseif view == "chess" then RenderChess()
+    elseif view == "workshop" then RenderWorkshop()
     elseif view == "settings" then RenderSettings()
     else RenderFeed() end
 end
@@ -949,7 +1065,7 @@ end
 
 local function MakeTab(def, x)
     local b = CreateFrame("Button", nil, f)
-    b:SetSize(162, TAB_H)
+    b:SetSize(TAB_W, TAB_H)
     b:SetPoint("TOPLEFT", x, -TAB_Y)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
@@ -1085,8 +1201,9 @@ local function Build()
         { key = "boards", label = "Scoreboard",    icon = SKULL },
         { key = "feed",   label = "Tavern Gossip", icon = ICONS .. "INV_Misc_Note_01" },
         { key = "chess",  label = "Chess",         icon = MEDIA .. "ChessWN" },
+        { key = "workshop", label = "Workshop",    icon = ICONS .. "Trade_BlackSmithing" },
     }
-    for i, def in ipairs(tabDefs) do tabs[i] = MakeTab(def, 14 + (i - 1) * 168) end
+    for i, def in ipairs(tabDefs) do tabs[i] = MakeTab(def, 14 + (i - 1) * (TAB_W + 4)) end
 
     f.side = Panel(f, nil, MEDIA .. "Wall", { 0.55, 0.5, 0.45, 1 }, { 0.3, 0.2, 0.1 }, EDGE, 12)
     f.side:SetPoint("TOPLEFT", 14, -BODY_TOP)
@@ -1119,6 +1236,28 @@ local function Build()
     f.listSub:SetPoint("TOPLEFT", f.listTitle, "BOTTOMLEFT", 0, -4)
     f.listSub:SetTextColor(0.85, 0.8, 0.68)
 
+    -- Recipe search, on the Workshop tab
+    f.search = CreateFrame("EditBox", "TheInnSearch", f, "InputBoxTemplate")
+    f.search:SetSize(170, 20)
+    f.search:SetPoint("TOPRIGHT", -40, -BODY_TOP - 8)
+    f.search:SetAutoFocus(false)
+    f.search:SetMaxLetters(40)
+    f.search.hint = f.search:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    f.search.hint:SetPoint("LEFT", 2, 0)
+    f.search.hint:SetText("Search recipes...")
+    f.search:SetScript("OnTextChanged", function(self)
+        local text = ns.Clean(self:GetText() or "", 40)
+        self.hint:SetShown(text == "")
+        if text == searchText then return end
+        searchText = text
+        workshopWho = nil
+        scroll:SetVerticalScroll(0)
+        Render()
+    end)
+    f.search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    f.search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    f.search:Hide()
+
     scroll = CreateFrame("ScrollFrame", "TheInnScroll", f, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", LIST_X, -BODY_TOP - 42)
     scroll:SetPoint("BOTTOMRIGHT", -34, 16)
@@ -1140,7 +1279,7 @@ end
 -- For tests
 function UI._widgets()
     return { frame = f, tabs = tabs, side = sideButtons, ach = achRows, lines = lineRows,
-             settings = f and f.settingsButton }
+             settings = f and f.settingsButton, search = f and f.search }
 end
 
 -- ---------------------------------------------------------------------------

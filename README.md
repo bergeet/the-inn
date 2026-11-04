@@ -2,7 +2,7 @@
 
 # The Inn
 
-**The Inn**: a WoW addon that turns your guild into a tavern, with achievements, a scoreboard and gossip shared between guildmates. It targets WoW: Forever (interface 16001) and Classic Era (11509).
+**The Inn**: a WoW addon that turns your guild into a tavern, with achievements, a scoreboard, gossip and a crafting workshop shared between guildmates. It targets WoW: Forever (interface 16001) and Classic Era (11509).
 
 User docs (install, commands, officer tools) are in [TheInn/README.md](TheInn/README.md).
 
@@ -38,7 +38,7 @@ ln -s "$PWD/TheInn" "/Applications/World of Warcraft/_classic_era_/Interface/Add
 
 ## Staying within Blizzard's rules
 
-The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The `addon only uses approved game APIs` test fails if code starts calling any game function that isn't on its allowlist. Review anything new before adding it there. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
+The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The `addon only uses approved game APIs` test fails if code starts calling any game function that isn't on its allowlist. Review anything new before adding it there. A second test, `addon never crafts, casts, or changes the profession window`, fails if names like `CraftRecipe` or `ExpandTradeSkillSubClass` appear anywhere in the code, even inside an allowed namespace such as `C_TradeSkillUI`. The Workshop only reads the profession window while the player has it open. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
 
 ## Releasing
 

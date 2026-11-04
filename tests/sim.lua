@@ -173,6 +173,12 @@ function Sim.NewWorld(opts)
         -- "era":     Classic Era 1.15 (skill list professions, boolean send
         --            results, combat log available, no secret values)
         flavor = opts.flavor or os.getenv("SIM_FLAVOR") or "forever",
+        -- The client's spell and item names (recipes are spells; some clients only link items)
+        spells = { [2329] = "Elixir of Lion's Strength", [2330] = "Minor Healing Potion",
+                   [3170] = "Weak Troll's Blood Potion", [17635] = "Flask of the Titans",
+                   [17636] = "Flask of Distilled Wisdom", [7418] = "Enchant Bracer - Minor Health",
+                   [7420] = "Enchant Chest - Minor Health", [2550] = "Cooking" },
+        items = { [13510] = "Flask of the Titans", [2454] = "Elixir of Lion's Strength" },
     }, World)
     return w
 end
@@ -476,6 +482,90 @@ function Client:BuildEnv()
         }
     end
 
+    -- Profession windows. st.trade (and st.craft, Enchanting on Classic Era):
+    -- { name, skillLine, rank, max, linked, lines = { { header = "Potions", expanded = false },
+    --   { spell = 2330, item = 118 }, ... }, unlearned = { spell, ... } }
+    local function Visible(win)
+        local out, hidden = {}, false
+        for _, l in ipairs(win and win.lines or {}) do
+            if l.header then
+                hidden = l.expanded == false
+                out[#out + 1] = l
+            elseif not hidden then
+                out[#out + 1] = l
+            end
+        end
+        return out
+    end
+    local function Link(kind, id, name) return string.format("|cffffffff|H%s:%d|h[%s]|h|r", kind, id, name or "?") end
+    if world.flavor == "era" then
+        env.GetSpellInfo = function(id) local n = world.spells[id] if n then return n, nil, 136243 end end
+        env.GetItemInfo = function(id) return world.items[id] end
+        env.GetTradeSkillLine = function()
+            local t = st.trade
+            if not t then return "UNKNOWN", 0, 0 end
+            return t.name, t.rank, t.max
+        end
+        env.GetNumTradeSkills = function() return #Visible(st.trade) end
+        env.GetTradeSkillInfo = function(i)
+            local l = Visible(st.trade)[i]
+            if not l then return nil end
+            if l.header then return l.header, "header", 0, l.expanded ~= false end
+            return world.spells[l.spell] or "?", "optimal", 0, false
+        end
+        env.GetTradeSkillRecipeLink = function(i)
+            local l = Visible(st.trade)[i]
+            if l and not l.header then return Link("enchant", l.spell, world.spells[l.spell]) end
+        end
+        env.GetTradeSkillItemLink = function(i)
+            local l = Visible(st.trade)[i]
+            if l and l.item then return Link("item", l.item, world.items[l.item]) end
+        end
+        -- The craft window (no GetCraftRecipeLink here; the item link of an
+        -- enchant is an enchant link, as on the real client)
+        env.GetCraftDisplaySkillLine = function()
+            local c = st.craft
+            if c then return c.name, c.rank, c.max end
+        end
+        env.GetNumCrafts = function() return #Visible(st.craft) end
+        env.GetCraftInfo = function(i)
+            local l = Visible(st.craft)[i]
+            if not l then return nil end
+            if l.header then return l.header, nil, "header", 0, l.expanded ~= false end
+            return world.spells[l.spell] or "?", nil, "optimal", 0, false, 0, 1
+        end
+        env.GetCraftItemLink = function(i)
+            local l = Visible(st.craft)[i]
+            if l and not l.header then return Link("enchant", l.spell, world.spells[l.spell]) end
+        end
+    else
+        env.C_Spell = { GetSpellName = function(id) return world.spells[id] end }
+        env.C_Item = { GetItemNameByID = function(id) return world.items[id] end }
+        -- Newer clients: every recipe of the open profession, learned or not
+        env.C_TradeSkillUI = {
+            GetBaseProfessionInfo = function()
+                local t = st.trade
+                if not t then return nil end
+                return { professionID = t.skillLine, professionName = t.name, skillLevel = t.rank, maxSkillLevel = t.max }
+            end,
+            GetAllRecipeIDs = function()
+                local ids = {}
+                for _, l in ipairs(st.trade and st.trade.lines or {}) do
+                    if l.spell then ids[#ids + 1] = l.spell end
+                end
+                for _, id in ipairs(st.trade and st.trade.unlearned or {}) do ids[#ids + 1] = id end
+                return ids
+            end,
+            GetRecipeInfo = function(id)
+                for _, u in ipairs(st.trade and st.trade.unlearned or {}) do
+                    if u == id then return { recipeID = id, learned = false } end
+                end
+                return { recipeID = id, learned = true }
+            end,
+            IsTradeSkillLinked = function() return st.trade ~= nil and st.trade.linked == true end,
+        }
+    end
+
     env.C_Timer = {
         After = function(d, fn) world:After(client, d, fn) end,
         NewTimer = function(d, fn) return world:Ticker(client, d, fn, 1) end,
@@ -689,6 +779,30 @@ end
 function Client:Land()
     self.state.onTaxi = false
     self:Fire("PLAYER_CONTROL_GAINED")
+end
+
+-- The player opens (or closes) their profession window. win: see BuildEnv.
+function Client:OpenProfession(win)
+    if win.craft then
+        self.state.craft = win
+        self:Fire("CRAFT_SHOW")
+        self:Fire("CRAFT_UPDATE")
+    else
+        self.state.trade = win
+        self:Fire("TRADE_SKILL_SHOW")
+        self:Fire(self.world.flavor == "era" and "TRADE_SKILL_UPDATE" or "TRADE_SKILL_LIST_UPDATE")
+    end
+end
+
+function Client:CloseProfession()
+    if self.state.craft then
+        self.state.craft = nil
+        self:Fire("CRAFT_CLOSE")
+    end
+    if self.state.trade then
+        self.state.trade = nil
+        self:Fire("TRADE_SKILL_CLOSE")
+    end
 end
 
 function Client:SetAFK(afk)

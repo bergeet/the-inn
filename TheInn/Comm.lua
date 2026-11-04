@@ -18,6 +18,15 @@
 --   Q  relayer  name,name,...     "relayer, please send me these members"
 --   N  name  d=1,w=2,...          relayed counters for name
 --   M  name  rev  last  id:ts,... relayed earned list for name (last = 1 on the final part)
+--   A  ver                        "I lost my saved data, please send me my own" (a fresh
+--                                 install). One guildmate with a copy answers with N + M
+--                                 about the asker, see Restore in Core.lua.
+--
+-- Professions (see Workshop.lua):
+--   P  owner  pv  key:rank:max:ver,...      owner's professions (sent by the owner, or relayed)
+--   B  owner  key  ver  base  last  id,...  owner's recipes for one profession: the whole list
+--                                           (base 0), or what's new since version base
+--   J  target  owner  key,...               "target, please send me owner's recipe lists"
 --
 --   D  id  points  ts  name  desc officer defines a custom achievement
 --   X  id  ts                     officer deletes a custom achievement
@@ -86,9 +95,20 @@ local function Pump()
     end
 end
 
+-- Urgent messages (the answer to a restore request) go ahead of the queue,
+-- in order among themselves.
+local urgent = false
+
 local function Enqueue(msg, channel, target)
     if not channel and not (IsInGuild and IsInGuild()) then return end
-    queue[#queue + 1] = { msg = msg, tries = 0, channel = channel, target = target }
+    local item = { msg = msg, tries = 0, channel = channel, target = target, urgent = urgent }
+    if urgent then
+        local at = 1
+        while queue[at] and queue[at].urgent do at = at + 1 end
+        table.insert(queue, at, item)
+    else
+        queue[#queue + 1] = item
+    end
     if not ticker then ticker = C_Timer.NewTicker(0.3, Pump) end
 end
 
@@ -159,11 +179,13 @@ local function DecodeStats(s)
 end
 
 function Comm.SendMyList()
+    if ns.HoldingData() then return end -- a restore is on its way
     lastFullList = GetTime()
     SendList({ "L" }, EarnedItems(ns.char.earned), { skipEmpty = true })
 end
 
 function Comm.SendStats()
+    if ns.HoldingData() then return end
     Comm.Send("S", EncodeStats(ns.SharedStats()), ns.char.rev or 0)
 end
 
@@ -209,6 +231,8 @@ end
 function Comm.Hello(force)
     if not ns.Guild() then return end
     Comm.Send("H", PROTOCOL)
+    if ns.Workshop then ns.Workshop.SendSummary() end
+    if ns.StartRestore() then return end -- a fresh install: our list and counters wait for the answer
     Comm.SendMyList()
     Comm.SendStats()
 end
@@ -224,6 +248,7 @@ end
 
 local lastAdvertSeen = -1000
 local relayedAt = {}
+local restoreAnswered = {} -- name -> when someone sent their data back to them
 
 -- Lists every guildmate we have data for, except ourselves and the one
 -- who just said hello. (Online members also answer for themselves; their
@@ -242,16 +267,22 @@ local function SendAdvert(exclude)
     SendList({ "V" }, items, { skipEmpty = true })
 end
 
-local function SendRelay(name)
+-- restore: the member asked for their own data back (send it right away,
+-- ahead of anything else waiting in the queue)
+local function SendRelay(name, restore)
     local g = ns.Guild()
     local m = g and g.members[name]
     if not m or name == ns.me then return end
-    if relayedAt[name] and GetTime() - relayedAt[name] < 30 then return end -- several people asked at once
+    if not restore and relayedAt[name] and GetTime() - relayedAt[name] < 30 then return end -- several people asked at once
     relayedAt[name] = GetTime()
+    urgent = restore and true or false
     Comm.Send("N", name, EncodeStats(m.stats or {}))
     local items = EarnedItems(m.earned, function(id) return ns.IsRevoked(g, name, id) end)
     SendList({ "M", name, m.rev or 0 }, items, { lastFlag = true })
+    urgent = false
+    if not restore and ns.Workshop then ns.Workshop.SendSummaryFor(name) end
 end
+Comm.SendList = SendList
 
 -- ---------------------------------------------------------------------------
 -- Incoming
@@ -323,7 +354,8 @@ function officerHandlers.G(sender, f)
     g.grants[target][id] = ts
     if g.revoked[target] then g.revoked[target][id] = nil end
     if ns.SameName(target, ns.me) then
-        if ns.byId[id] then ns.Earn(id, { ts = ts }) end -- otherwise applied when the definition arrives
+        -- (otherwise applied when the definition arrives; quietly while restoring a lost install)
+        if ns.byId[id] then ns.Earn(id, { ts = ts, retro = ns.HoldingData() }) end
     elseif ns.ApplyEarned(target, id, ts) then
         ns.AddFeed(target, id, ts)
         AnnounceOther(target, id)
@@ -380,13 +412,20 @@ function Comm.OnMessage(prefix, text, channel, sender)
         return
     end
 
+    if kind == "P" or kind == "B" or kind == "J" then
+        if ns.Workshop then ns.Workshop.OnMessage(sender, f) end
+        return
+    end
+
     if kind == "H" then
         ns.Member(g, sender).lastSeen = ns.Now()
+        ns.AskAgain() -- still waiting for our own data? They might have it.
         -- Short random delay so several guildmates don't answer at the same instant.
         C_Timer.After(1 + math.random() * 3, function()
             if GetTime() - lastFullList > 60 then
                 Comm.SendMyList()
                 Comm.SendStats()
+                if ns.Workshop then ns.Workshop.SendSummary() end
             end
             SendOfficerDataFor(sender)
         end)
@@ -424,14 +463,36 @@ function Comm.OnMessage(prefix, text, channel, sender)
     elseif kind == "Q" then
         if not ns.SameName(f[2] or "", ns.me) then return end
         for name in (f[3] or ""):gmatch("[^,]+") do SendRelay(name) end
+    elseif kind == "A" then
+        -- A guildmate lost their saved data. If we have a copy, one of us sends
+        -- it back: whoever's random timer fires first, the others see the answer.
+        local m = g.members[sender]
+        if not m or (m.rev or 0) == 0 then return end
+        local askedAt = GetTime()
+        C_Timer.After(0.2 + math.random(), function()
+            if (restoreAnswered[sender] or -1) >= askedAt then return end
+            restoreAnswered[sender] = GetTime()
+            SendRelay(sender, true)
+        end)
     elseif kind == "N" then
         local name = ns.NormalizeName(f[2])
-        if not name or ns.SameName(name, ns.me) then return end
+        if not name then return end
+        restoreAnswered[name] = GetTime()
+        if ns.SameName(name, ns.me) then -- only during a restore, see Core.lua
+            ns.RestoreStats(sender, DecodeStats(f[3]))
+            return
+        end
         ns.ApplyStats(name, DecodeStats(f[3]))
         Refresh()
     elseif kind == "M" then
         local name, rev, last = ns.NormalizeName(f[2]), tonumber(f[3]), f[4]
-        if not name or not rev or ns.SameName(name, ns.me) then return end
+        if not name or not rev then return end
+        if ns.SameName(name, ns.me) then
+            local items = {}
+            for id, ts in (f[5] or ""):gmatch("([^:,]+):(%d+)") do items[#items + 1] = { id, tonumber(ts) } end
+            ns.RestoreEarned(sender, rev, last == "1", items)
+            return
+        end
         for id, ts in (f[5] or ""):gmatch("([^:,]+):(%d+)") do
             if not ns.IsRevoked(g, name, id) then ns.ApplyEarned(name, id, tonumber(ts), true) end
         end
