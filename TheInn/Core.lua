@@ -1036,7 +1036,6 @@ local function Startup()
     ns.scanned = true
     if ns.Trackers then pcall(ns.Trackers.OnStartup) end
     if ns.ChessGame then pcall(ns.ChessGame.Start) end
-    if ns.UI then pcall(ns.UI.UpdateMinimapButton) end
     if ns.Workshop then pcall(ns.Workshop.Start) end
     if g then
         if ns.Comm then ns.Comm.Hello() end
@@ -1050,10 +1049,19 @@ local function Startup()
             if ns.SyncGuild() or tries >= 30 then
                 if resolveTicker then resolveTicker:Cancel() end
                 resolveTicker = nil
+                if ns.UI then ns.UI.Refresh() end
             end
         end)
     end
     if ns.UI then ns.UI.Refresh() end
+end
+
+-- Just logged in and the guild isn't known yet (Startup hasn't run, or it's
+-- still asking the client which guild we're in). The window says it's
+-- settling in rather than "not in a guild" or "quiet night".
+function ns.Settling()
+    if ns.guildKey then return false end
+    return not ns.ready or resolveTicker ~= nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -1373,6 +1381,9 @@ function handlers.PLAYER_LOGIN()
     local name, realm = UnitFullName("player")
     if realm and realm ~= "" then ns.me = name .. "-" .. realm else ns.me = ns.NormalizeName(name) end
     ns.RebuildDefs()
+    -- The minimap button needs only the settings, so it's there right away
+    -- instead of waiting for Startup and the first scan
+    if ns.UI then pcall(ns.UI.UpdateMinimapButton) end
     RequestRoster()
     C_Timer.After(4, Startup)
 end

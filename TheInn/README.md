@@ -105,6 +105,10 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.9.2**
+- The minimap button shows up as soon as you log in, instead of a few seconds later.
+- Opening the window in the first few seconds after login says it's settling in, instead of claiming you're not in a guild or that nothing has happened.
+
 **0.9.1**
 - The X in the corner closes the window again. It used to hide only the header (the sign, your name and bar tab), which then stayed gone.
 - The Scoreboard, the notice board heading and the chess window title use the same easy-to-read font as the rest of the window. The sign keeps its old one.

@@ -253,10 +253,13 @@ local function When(ts)
 end
 
 -- The sign shows the guild's name
+local function Settling() return ns.Settling and ns.Settling() or false end
+local SETTLING = "Settling in. Your guild shows up in a moment."
+
 local function InnName()
     local g = ns.Guild and ns.Guild()
     if g and g.name and g.name ~= "" then return g.name end
-    return "The Empty Tavern"
+    return Settling() and "The Inn" or "The Empty Tavern"
 end
 UI.InnName = InnName
 
@@ -942,7 +945,9 @@ local function RenderHome(room)
         local e = feed[i]
         Add(L, { icon = FeedIcon(e), iconSize = 16, text = FeedText(e), right = MUTED .. Ago(e.ts) .. "|r", rightW = 64 })
     end
-    if #feed == 0 then
+    if #feed == 0 and Settling() then
+        Add(L, { text = MUTED .. SETTLING .. "|r", noLine = true })
+    elseif #feed == 0 then
         Add(L, { text = MUTED .. "Quiet night. Nobody's done anything worth gossiping about. Yet.|r", noLine = true })
     end
     Finish(L)
@@ -968,7 +973,10 @@ local function RenderHome(room)
         if a.points ~= b.points then return a.points > b.points end
         return a.name < b.name
     end)
-    if not g then
+    if not g and Settling() then
+        room.barCount:SetText("")
+        Add(L, { text = MUTED .. SETTLING .. "|r", noLine = true })
+    elseif not g then
         room.barCount:SetText("")
         Add(L, { text = MUTED .. "You're not in a guild. Drinking alone, then.|r", noLine = true })
     elseif others == 0 then
@@ -1278,7 +1286,9 @@ local function RenderBoards(room)
     for _, e in ipairs(entries) do
         if e.name ~= ns.me then others = others + 1 end
     end
-    if not g then
+    if not g and Settling() then
+        Add(L, { text = CHALK_DIM .. SETTLING .. "|r", noLine = true })
+    elseif not g then
         Add(L, { text = CHALK_DIM .. "You're not in a guild. Nobody to compare yourself to.|r", noLine = true })
     elseif others == 0 then
         -- Just you: top of the board, technically
@@ -1450,8 +1460,13 @@ local function RenderFeed(room)
     if #visible == 0 then
         local top = L.y
         L.y = L.y + 8
-        Paper({ head = "Quiet night", h = 34 })
-        Paper({ text = INK_DIM .. "Go do something heroic. Or stupid. Then come back.|r", noLine = true })
+        if Settling() then
+            Paper({ head = "Settling in", h = 34 })
+            Paper({ text = INK_DIM .. "Your guild's gossip shows up in a moment.|r", noLine = true })
+        else
+            Paper({ head = "Quiet night", h = 34 })
+            Paper({ text = INK_DIM .. "Go do something heroic. Or stupid. Then come back.|r", noLine = true })
+        end
         L.y = L.y + 10
         Pin(top)
         L.y = L.y + 14
@@ -1646,7 +1661,9 @@ local function RenderChess(room)
                  tip = not p.m and "We haven't heard from their addon yet. Challenge anyway: if they have The Inn they'll get the invite." or nil,
                  btn = "Challenge", disabled = not canChallenge, onClick = Act(function() G.Challenge(p.name) end) })
     end
-    if #players == 0 then
+    if #players == 0 and Settling() then
+        Add(L, { text = MUTED .. SETTLING .. "|r", noLine = true })
+    elseif #players == 0 then
         Add(L, { text = MUTED .. "Nobody else in the guild is online.|r", noLine = true })
         Add(L, { text = MUTED .. "The barkeep is always up for a game.|r", noLine = true })
     end
@@ -1843,8 +1860,12 @@ local function RenderWorkshop(room)
         end
     else
         SetHeader("The Workshop", "Who can craft what. Open your profession window to share your recipes.")
-        Add(L, { text = MUTED .. "No professions on the board yet. Open your profession window once,|r", noLine = true })
-        Add(L, { text = MUTED .. "and get your guildies to install the addon.|r", noLine = true })
+        if Settling() then
+            Add(L, { text = MUTED .. SETTLING .. "|r", noLine = true })
+        else
+            Add(L, { text = MUTED .. "No professions on the board yet. Open your profession window once,|r", noLine = true })
+            Add(L, { text = MUTED .. "and get your guildies to install the addon.|r", noLine = true })
+        end
     end
     Finish(L)
 end
