@@ -388,6 +388,10 @@ function Client:BuildEnv()
             f.TitleText = NewWidget(client, "FontString", nil, f)
             f.CloseButton = NewWidget(client, "Button", nil, f)
         end
+        if template == "UIPanelCloseButton" then
+            -- Blizzard's close button hides its parent, whatever that is
+            f:SetScript("OnClick", function(self) self:GetParent():Hide() end)
+        end
         return f
     end
     env.UIParent = NewWidget(client, "Frame", "UIParent")

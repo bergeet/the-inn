@@ -13,7 +13,8 @@ ns.UI = UI
 --   Chess        your game (played in the board window), rating, barkeep, challengers
 --   Workshop     professions and recipes
 -- Settings open from the cog in the header. Text uses the game's own fonts
--- (Friz Quadrata, Morpheus, Arial Narrow) and every icon is a game icon.
+-- (Friz Quadrata and Arial Narrow; Morpheus only on the sign) and every icon
+-- is a game icon.
 
 -- ---------------------------------------------------------------------------
 -- Layout, colors, fonts, textures
@@ -485,7 +486,7 @@ local function HideTooltip() if GameTooltip then GameTooltip:Hide() end end
 local STYLES = {
     wall  = { font = FRIZ,     size = 13, sub = 11, right = NARROW,   rightSize = 14, color = C.cream, subColor = C.muted,
               line = { 1, 0.86, 0.63, 0.07 } },
-    chalk = { font = MORPHEUS, size = 18, sub = 13, right = MORPHEUS, rightSize = 17, color = C.chalk, subColor = C.chalkDim,
+    chalk = { font = FRIZ,     size = 15, sub = 11, right = FRIZ,     rightSize = 15, color = C.chalk, subColor = C.chalkDim,
               line = { 0.93, 0.94, 0.91, 0.14 } },
     ink   = { font = FRIZ,     size = 13, sub = 11, right = NARROW,   rightSize = 13, color = C.ink,   subColor = C.inkDim,
               line = { 0.31, 0.2, 0.08, 0.25 } },
@@ -531,7 +532,7 @@ local function NewRow(list, i)
     r.rim = r:CreateTexture(nil, "ARTWORK")
     r.icon = r:CreateTexture(nil, "OVERLAY")
     r.text = Label(r, st.size, st.color, st.font)
-    r.head = Label(r, 18, C.inkHead, MORPHEUS)
+    r.head = Label(r, 15, C.inkHead, FRIZ)
     r.sub = Label(r, st.sub, st.subColor, st.font)
     r.right = Label(r, st.rightSize, st.color, st.right)
     r.right:SetJustifyH("RIGHT")
@@ -553,7 +554,7 @@ local function Begin(list)
     list.n, list.y = 0, 0
 end
 
--- Add a row. o: x, w, h, gap, band (a section heading), head (a Morpheus
+-- Add a row. o: x, w, h, gap, band (a section heading), head (a parchment
 -- heading), rank, dot, icon, iconSize, rim (color), desat, text, sub,
 -- bar = { value, max }, barW, barText, right, rightW, btn, onClick,
 -- disabled, def (achievement tooltip), tip, noLine
@@ -902,7 +903,7 @@ local function BuildHome(room)
     pin:SetPoint("TOP", 0, -5)
     pin:SetTexture(MEDIA .. "ChessDot")
     pin:SetVertexColor(0.55, 0.1, 0.06)
-    local nh = Label(note, 18, C.inkHead, MORPHEUS)
+    local nh = Label(note, 15, C.inkHead, FRIZ)
     nh:SetPoint("TOPLEFT", 16, -20)
     nh:SetText("On the notice board")
     room.notice = List(room, note, HOME_RIGHT - 28, 96, 32, "ink")
@@ -1212,9 +1213,9 @@ local function BuildBoards(room)
     local tex = slate:CreateTexture(nil, "BACKGROUND")
     tex:SetAllPoints()
     tex:SetTexture(MEDIA .. "Chalkboard")
-    room.title = Label(slate, 26, C.chalk, MORPHEUS)
+    room.title = Label(slate, 21, C.chalk, FRIZ)
     room.title:SetPoint("TOPLEFT", 26, -22)
-    room.tagline = Label(slate, 13, C.chalkDim, MORPHEUS)
+    room.tagline = Label(slate, 12, C.chalkDim, FRIZ)
     room.tagline:SetPoint("TOPLEFT", room.title, "BOTTOMLEFT", 0, -4)
     room.tagline:SetWidth(bw - 52)
     room.list = List(room, slate, bw - 40, BODY_H - 82 - 146, 30, "chalk", true)
@@ -1224,16 +1225,16 @@ local function BuildBoards(room)
     rule:SetHeight(2)
     rule:SetPoint("BOTTOMLEFT", 22, 138)
     rule:SetPoint("BOTTOMRIGHT", -22, 138)
-    local tl = Label(slate, 17, C.chalkGold, MORPHEUS)
+    local tl = Label(slate, 15, C.chalkGold, FRIZ)
     tl:SetPoint("BOTTOMLEFT", 24, 112)
     tl:SetText("Your tally")
     room.tally = {}
     local colW = (bw - 48) / 4
     for i = 1, #TALLY do
         local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-        local v = Label(slate, 22, C.chalk, MORPHEUS)
+        local v = Label(slate, 19, C.chalk, FRIZ)
         v:SetPoint("BOTTOMLEFT", 24 + col * colW, 70 - row * 44)
-        local k = Label(slate, 11, C.chalkDim, MORPHEUS)
+        local k = Label(slate, 10, C.chalkDim, FRIZ)
         k:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -1)
         k:SetText(TALLY[i][1])
         room.tally[i] = v
@@ -2121,6 +2122,9 @@ local function Build()
     -- Settings (the cog) and close
     local close = CreateFrame("Button", nil, header, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
+    -- The template hides the button's parent, which is the header, not the window
+    close:SetScript("OnClick", function() f:Hide() end)
+    f.close = close
     f.gear = CreateFrame("Button", nil, header)
     f.gear:SetSize(24, 24)
     f.gear:SetPoint("TOPRIGHT", -38, -9)
@@ -2213,6 +2217,7 @@ function UI._widgets()
              ach = rooms.ach and rooms.ach.list.rows or {},
              chips = room and room.chips or {},
              settings = f and f.gear,
+             close = f and f.close,
              search = rooms.workshop and rooms.workshop.search,
              plaqueSearch = rooms.ach and rooms.ach.search,
              announce = rooms.feed and rooms.feed.announce }

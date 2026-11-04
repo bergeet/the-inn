@@ -302,7 +302,7 @@ local function Build()
     tinsert(UISpecialFrames, "TheInnChess")
 
     f.title = f:CreateFontString(nil, "OVERLAY")
-    if not pcall(f.title.SetFont, f.title, "Fonts\\MORPHEUS.TTF", 24, "") then f.title:SetFontObject("GameFontNormalHuge") end
+    if not pcall(f.title.SetFont, f.title, "Fonts\\FRIZQT__.TTF", 20, "") then f.title:SetFontObject("GameFontNormalHuge") end
     f.title:SetPoint("TOP", 0, -16)
     f.title:SetText("Tavern Chess")
     f.title:SetTextColor(1, 0.85, 0.45)
