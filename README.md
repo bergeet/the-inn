@@ -2,9 +2,19 @@
 
 # The Inn
 
-**The Inn**: a WoW addon that turns your guild into a tavern, with achievements, a scoreboard, gossip and a crafting workshop shared between guildmates. It targets WoW: Forever (interface 16001) and Classic Era (11509).
+**The Inn** is a WoW addon for a guild: shared achievements, leaderboards and a feed of what guildmates have been up to, synced in game between everyone who runs it. It targets WoW: Forever (interface 16001) and Classic Era (11509).
 
-User docs (install, commands, officer tools) are in [TheInn/README.md](TheInn/README.md).
+<p align="center"><img src="docs/screenshot.png" width="720" alt="The tavern window: the sign, your bar tab, the plaques you're closest to, last night's gossip and the notice board"></p>
+
+- **Achievements**: about 160, plus custom ones officers can create and grant.
+- **Scoreboard**: leaderboards for points, deaths, jumps, PvP, duels and chess.
+- **Gossip**: a feed of unlocks, deaths, and duel and chess results.
+- **Workshop**: who in the guild has which profession and can craft which recipe.
+- **Chess**: play a guildie, or practise against the barkeep.
+
+It only reads game state and never acts for you (see [Staying within Blizzard's rules](#staying-within-blizzards-rules)).
+
+Install, commands and officer tools are in [TheInn/README.md](TheInn/README.md), the user docs that ship with the addon.
 
 ## Layout
 
