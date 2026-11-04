@@ -20,9 +20,32 @@
 --   duelsFled, gDuelsWon, gDuelsLost (duels against guildmates)
 --
 -- hidden = true shows "???" until earned; hint is the teaser shown instead.
+-- A hidden achievement's name and desc are written base64-encoded as H"...",
+-- so opening this file doesn't spoil them. It's not security, just a curtain.
+-- To encode a new one:  printf %s "Your text" | base64
 
 local _, ns = ...
 local I = "Interface\\Icons\\"
+
+-- Base64 decoder (plain Lua 5.1, no bit library needed).
+local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+local B64VAL = {}
+for i = 1, 64 do B64VAL[B64:sub(i, i)] = i - 1 end
+local function H(s)
+    local out, acc, bits = {}, 0, 0
+    for c in s:gmatch("[^=]") do
+        acc = acc * 64 + B64VAL[c]
+        bits = bits + 6
+        if bits >= 8 then
+            bits = bits - 8
+            local p = 2 ^ bits
+            out[#out + 1] = string.char(math.floor(acc / p))
+            acc = acc % p
+        end
+    end
+    return table.concat(out)
+end
+ns.DecodeHidden = H
 
 ns.CATEGORIES = { "Milestones", "Dungeons", "Raids", "Professions", "PvP", "Duels", "Together", "Shenanigans", "Chess", "Shame", "Guild" }
 
@@ -129,7 +152,7 @@ ns.STATIC = {
     stat("hk1000",  "PvP", "hk", 1000,  15, "Grim Reaper's Intern",       "Earn 1,000 honorable kills.",                     "Ability_DualWield"),
     stat("hk5000",  "PvP", "hk", 5000,  25, "Honorable Menace",           "Earn 5,000 honorable kills. \"Honorable\" is doing a lot of work there.", "Ability_DualWield"),
     stat("hk10000", "PvP", "hk", 10000, 50, "Ten Thousand Tears",         "Earn 10,000 honorable kills.",                    "Ability_DualWield"),
-    stat("dk1",     "PvP", "dk", 1,     5,  "Dishonorable Discharge",     "Kill a civilian. The guards will remember this.", "Ability_Rogue_Disguise",
+    stat("dk1",     "PvP", "dk", 1,     5,  H"RGlzaG9ub3JhYmxlIERpc2NoYXJnZQ==",     H"S2lsbCBhIGNpdmlsaWFuLiBUaGUgZ3VhcmRzIHdpbGwgcmVtZW1iZXIgdGhpcy4=", "Ability_Rogue_Disguise",
          "Some kills cost honor instead of earning it."),
     stat("kb1",     "PvP", "killingBlows", 1,    5,  "Last Hit",             "Land the killing blow on an enemy player.",   "Ability_Warrior_Charge"),
     stat("kb100",   "PvP", "killingBlows", 100,  15, "Finisher",             "Land 100 killing blows on enemy players.",    "Ability_Warrior_Charge"),
@@ -150,15 +173,15 @@ ns.STATIC = {
     stat("gduelWin1",  "Duels", "gDuelsWon",  1,  5,  "Family Feud",               "Beat a guildmate in a duel.",                        "Ability_Warrior_Challange"),
     stat("gduelWin10", "Duels", "gDuelsWon",  10, 10, "Pecking Order",             "Beat guildmates in 10 duels.",                       "Ability_Warrior_Challange"),
     stat("gduelLose10","Duels", "gDuelsLost", 10, 5,  "Guild Doormat",             "Lose 10 duels to guildmates. They wipe their feet on you.", "Ability_Warrior_Challange"),
-    event("mutiny",      "Duels", 15, "Mutiny",       "Beat the Guild Master in a duel.",                          "INV_Crown_01", "Someone at the top needs humbling."),
+    event("mutiny",      "Duels", 15, H"TXV0aW55",       H"QmVhdCB0aGUgR3VpbGQgTWFzdGVyIGluIGEgZHVlbC4=",                          "INV_Crown_01", "Someone at the top needs humbling."),
     event("giantSlayer", "Duels", 15, "Giant Slayer", "Beat a guildmate at least 10 levels above you in a duel.", "Ability_Warrior_Charge"),
-    event("humbled",     "Duels", 5,  "Humbled",      "Lose a duel to a guildmate at least 10 levels below you.",  "Ability_Warrior_Disarm", "Pick on someone smaller than you. Lose."),
+    event("humbled",     "Duels", 5,  H"SHVtYmxlZA==",      H"TG9zZSBhIGR1ZWwgdG8gYSBndWlsZG1hdGUgYXQgbGVhc3QgMTAgbGV2ZWxzIGJlbG93IHlvdS4=",  "Ability_Warrior_Disarm", "Pick on someone smaller than you. Lose."),
 
     stat("duelStreak5",  "Duels", "bestWinStreak",   5,  10, "On Fire",         "Win 5 duels in a row.",               "INV_Sword_04"),
     stat("duelStreak10", "Duels", "bestWinStreak",   10, 25, "Unstoppable",     "Win 10 duels in a row.",              "INV_Sword_04"),
     stat("loseStreak5",  "Duels", "worstLoseStreak", 5,  5,  "Doormat Deluxe",  "Lose 5 duels in a row.",              "Ability_Parry"),
     stat("duelElo1400", "Duels", "duelEloPeak", 1400, 15, "Blademaster of the Bar", "Reach a duel rating of 1400.", "INV_Sword_04"),
-    stat("duelElo1600", "Duels", "duelEloPeak", 1600, 25, "Undisputed Champion", "Reach a duel rating of 1600.", "INV_Crown_01",
+    stat("duelElo1600", "Duels", "duelEloPeak", 1600, 25, H"VW5kaXNwdXRlZCBDaGFtcGlvbg==", H"UmVhY2ggYSBkdWVsIHJhdGluZyBvZiAxNjAwLg==", "INV_Crown_01",
          "Beat everyone. Then beat them again."),
     stat("rival10",      "Duels", "maxRivalry",      10, 10, "Arch-Nemesis",    "Duel the same guildmate 10 times.",   "Ability_Warrior_Challange"),
 
@@ -168,25 +191,25 @@ ns.STATIC = {
     stat("guildFirst1",  "Together", "guildFirsts", 1,  5,  "Trailblazer", "Be the first in the guild to earn an achievement.", "INV_Misc_Spyglass_02"),
     stat("guildFirst10", "Together", "guildFirsts", 10, 15, "Pioneer",     "Be the first in the guild to earn 10 achievements.", "INV_Misc_Spyglass_02"),
     stat("guildFirst50", "Together", "guildFirsts", 50, 25, "Show-Off",    "Be first in the guild 50 times. Leave some for the rest of us.", "INV_Misc_Spyglass_02"),
-    stat("waves10", "Together", "uniqueWaves", 10, 15, "Secret Handshake", "Wave at 10 different guildmates.", "Spell_Holy_BlessingOfStrength",
+    stat("waves10", "Together", "uniqueWaves", 10, 15, H"U2VjcmV0IEhhbmRzaGFrZQ==", H"V2F2ZSBhdCAxMCBkaWZmZXJlbnQgZ3VpbGRtYXRlcy4=", "Spell_Holy_BlessingOfStrength",
          "Be friendly. Specifically, with your hand."),
-    stat("hugs10",  "Together", "uniqueHugs",  10, 10, "Group Hug",        "Hug 10 different guildmates.",     "Spell_Holy_BlessingOfStrength", "Spread some love around the guild."),
-    event("loyal",          "Together", 10, "Loyal Subject",        "Bow to the Guild Master.",    "INV_Crown_01", "Show some respect to the one in charge."),
-    event("brownNoser",     "Together", 10, "Brown Noser",          "Kiss the Guild Master.",      "INV_Crown_01", "Promotions don't earn themselves."),
-    event("careerLimiting", "Together", 10, "Career-Limiting Move", "Spit on the Guild Master.",   "INV_Crown_01", "Tell the one in charge what you really think."),
+    stat("hugs10",  "Together", "uniqueHugs",  10, 10, H"R3JvdXAgSHVn",        H"SHVnIDEwIGRpZmZlcmVudCBndWlsZG1hdGVzLg==",     "Spell_Holy_BlessingOfStrength", "Spread some love around the guild."),
+    event("loyal",          "Together", 10, H"TG95YWwgU3ViamVjdA==",        H"Qm93IHRvIHRoZSBHdWlsZCBNYXN0ZXIu",    "INV_Crown_01", "Show some respect to the one in charge."),
+    event("brownNoser",     "Together", 10, H"QnJvd24gTm9zZXI=",          H"S2lzcyB0aGUgR3VpbGQgTWFzdGVyLg==",      "INV_Crown_01", "Promotions don't earn themselves."),
+    event("careerLimiting", "Together", 10, H"Q2FyZWVyLUxpbWl0aW5nIE1vdmU=", H"U3BpdCBvbiB0aGUgR3VpbGQgTWFzdGVyLg==",   "INV_Crown_01", "Tell the one in charge what you really think."),
 
     -- Shenanigans
     stat("jump1000",   "Shenanigans", "jumps", 1000,   5,  "Hop to It",               "Jump 1,000 times.",   "Ability_Rogue_Sprint"),
     stat("jump10000",  "Shenanigans", "jumps", 10000,  10, "Kangaroo Certified",      "Jump 10,000 times.",  "Ability_Rogue_Sprint"),
     stat("jump50000",  "Shenanigans", "jumps", 50000,  25, "Do You Even Walk?",       "Jump 50,000 times.",  "Ability_Rogue_Sprint"),
     stat("jump100000", "Shenanigans", "jumps", 100000, 50, "Gravity Is a Suggestion", "Jump 100,000 times.", "Ability_Rogue_Sprint"),
-    stat("jumpDay",    "Shenanigans", "bestJumpDay", 1000, 10, "Too Much Coffee",     "Jump 1,000 times in one day.", "Ability_Rogue_Sprint",
+    stat("jumpDay",    "Shenanigans", "bestJumpDay", 1000, 10, H"VG9vIE11Y2ggQ29mZmVl",     H"SnVtcCAxLDAwMCB0aW1lcyBpbiBvbmUgZGF5Lg==", "Ability_Rogue_Sprint",
          "Somebody had a little too much coffee."),
-    stat("dance100",   "Shenanigans", "dances",   100, 5, "Can't Stop, Won't Stop", "/dance 100 times.",  "Spell_Nature_Polymorph", "Show off your moves. Repeatedly."),
-    stat("chicken25",  "Shenanigans", "chickens", 25,  5, "Bawk Bawk",              "/chicken 25 times.", "Spell_Nature_Polymorph", "Bawk?"),
-    stat("flex50",     "Shenanigans", "flexes",   50,  5, "Do You Even Lift?",      "/flex 50 times.",    "Spell_Holy_BlessingOfStrength", "Show everyone those muscles."),
-    stat("cry10",      "Shenanigans", "cries",    10,  5, "It's Fine, I'm Fine",    "/cry 10 times.",     "Spell_Nature_Polymorph", "Let it all out."),
-    stat("lol100",     "Shenanigans", "lols",     100, 5, "Professional Audience",  "/lol 100 times.",    "Spell_Nature_Polymorph", "Laugh at everything. Everything."),
+    stat("dance100",   "Shenanigans", "dances",   100, 5, H"Q2FuJ3QgU3RvcCwgV29uJ3QgU3RvcA==", H"L2RhbmNlIDEwMCB0aW1lcy4=",  "Spell_Nature_Polymorph", "Show off your moves. Repeatedly."),
+    stat("chicken25",  "Shenanigans", "chickens", 25,  5, H"QmF3ayBCYXdr",              H"L2NoaWNrZW4gMjUgdGltZXMu", "Spell_Nature_Polymorph", "Bawk?"),
+    stat("flex50",     "Shenanigans", "flexes",   50,  5, H"RG8gWW91IEV2ZW4gTGlmdD8=",      H"L2ZsZXggNTAgdGltZXMu",    "Spell_Holy_BlessingOfStrength", "Show everyone those muscles."),
+    stat("cry10",      "Shenanigans", "cries",    10,  5, H"SXQncyBGaW5lLCBJJ20gRmluZQ==",    H"L2NyeSAxMCB0aW1lcy4=",     "Spell_Nature_Polymorph", "Let it all out."),
+    stat("lol100",     "Shenanigans", "lols",     100, 5, H"UHJvZmVzc2lvbmFsIEF1ZGllbmNl",  H"L2xvbCAxMDAgdGltZXMu",    "Spell_Nature_Polymorph", "Laugh at everything. Everything."),
     stat("fish100",    "Shenanigans", "fishCaught", 100,  5,  "Gone Fishin'",            "Catch 100 things while fishing.",   "Trade_Fishing"),
     stat("fish1000",   "Shenanigans", "fishCaught", 1000, 15, "Touch Water, Not Grass",  "Catch 1,000 things while fishing.", "Trade_Fishing"),
     stat("hearth50",   "Shenanigans", "hearths", 50, 10, "Home Sweet Hearth", "Use your Hearthstone 50 times.", "INV_Misc_Rune_01"),
@@ -197,20 +220,20 @@ ns.STATIC = {
     stat("rare1",      "Shenanigans", "lootedRare", 1,    5,  "Ooh, Shiny",               "Loot a rare (blue) item.", "INV_Misc_Gem_Pearl_04"),
     stat("epic1",      "Shenanigans", "lootedEpic", 1,    15, "Purple Haze",              "Loot an epic item.",      "INV_Misc_Gem_Pearl_04"),
     stat("epic10",     "Shenanigans", "lootedEpic", 10,   25, "Purple Rain",              "Loot 10 epic items.",     "INV_Misc_Gem_Pearl_04"),
-    stat("legendary",  "Shenanigans", "lootedLegendary", 1, 50, "Legendary? In This Economy?", "Loot a legendary item.", "INV_Misc_Gem_Pearl_04",
+    stat("legendary",  "Shenanigans", "lootedLegendary", 1, 50, H"TGVnZW5kYXJ5PyBJbiBUaGlzIEVjb25vbXk/", H"TG9vdCBhIGxlZ2VuZGFyeSBpdGVtLg==", "INV_Misc_Gem_Pearl_04",
          "Orange is the new purple."),
     event("mount",     "Shenanigans", 5,  "Giddy Up",       "Ride a mount.",                    "Ability_Mount_RidingHorse"),
     event("epicMount", "Shenanigans", 25, "Need for Speed", "Ride an epic mount at full speed.", "Ability_Mount_RidingHorse"),
     stat("afk100",   "Shenanigans", "afks", 100, 5, "Professional Idler", "Go AFK 100 times.", "Spell_Nature_Sleep"),
-    stat("afkLong",  "Shenanigans", "longestAfk", 1800, 10, "Gone for Groceries", "Stay AFK for 30 minutes in one go.", "Spell_Nature_Sleep",
+    stat("afkLong",  "Shenanigans", "longestAfk", 1800, 10, H"R29uZSBmb3IgR3JvY2VyaWVz", H"U3RheSBBRksgZm9yIDMwIG1pbnV0ZXMgaW4gb25lIGdvLg==", "Spell_Nature_Sleep",
          "Step away from the keyboard. For a while."),
-    event("nightOwl", "Shenanigans", 10, "Should Be Asleep", "Log in between 3 and 5 in the morning.", "Spell_Nature_Sleep",
+    event("nightOwl", "Shenanigans", 10, H"U2hvdWxkIEJlIEFzbGVlcA==", H"TG9nIGluIGJldHdlZW4gMyBhbmQgNSBpbiB0aGUgbW9ybmluZy4=", "Spell_Nature_Sleep",
           "Some achievements only come out at night."),
-    stat("session6",  "Shenanigans", "longestSession", 21600, 10, "Touch Grass",       "Play for 6 hours in one session.",  "INV_Misc_PocketWatch_01",
+    stat("session6",  "Shenanigans", "longestSession", 21600, 10, H"VG91Y2ggR3Jhc3M=",       H"UGxheSBmb3IgNiBob3VycyBpbiBvbmUgc2Vzc2lvbi4=",  "INV_Misc_PocketWatch_01",
          "Stay a while. A long while."),
-    stat("session12", "Shenanigans", "longestSession", 43200, 25, "Is This Your Job?", "Play for 12 hours in one session.", "INV_Misc_PocketWatch_01",
+    stat("session12", "Shenanigans", "longestSession", 43200, 25, H"SXMgVGhpcyBZb3VyIEpvYj8=", H"UGxheSBmb3IgMTIgaG91cnMgaW4gb25lIHNlc3Npb24u", "INV_Misc_PocketWatch_01",
          "Longer than that."),
-    event("bagsFull",     "Shenanigans", 5,  "Inventory Tetris Champion", "Fill every slot in your bags.", "INV_Misc_Bag_08", "Maybe sell some of that."),
+    event("bagsFull",     "Shenanigans", 5,  H"SW52ZW50b3J5IFRldHJpcyBDaGFtcGlvbg==", H"RmlsbCBldmVyeSBzbG90IGluIHlvdXIgYmFncy4=", "INV_Misc_Bag_08", "Maybe sell some of that."),
     event("questLogFull", "Shenanigans", 10, "Overcommitted",             "Fill your quest log.",          "INV_Misc_Note_01"),
     stat("abandon10", "Shenanigans", "abandons", 10, 5, "Commitment Issues", "Abandon 10 quests.", "INV_Misc_Note_01"),
 
@@ -219,18 +242,18 @@ ns.STATIC = {
     stat("chessWin10",  "Chess", "chessWins",   10, 25, "Grandmaster of the Tavern", "Win 10 games of chess.",                "INV_Crown_01"),
     stat("chessGames10","Chess", "chessGames",  10, 10, "Board Game Night",          "Play 10 games of chess.",               "INV_Misc_Book_09"),
     stat("chessElo1400", "Chess", "chessEloPeak", 1400, 15, "Club Player",     "Reach a chess rating of 1400.", "INV_Crown_01"),
-    stat("chessElo1600", "Chess", "chessEloPeak", 1600, 25, "Tavern Champion", "Reach a chess rating of 1600.", "INV_Crown_01",
+    stat("chessElo1600", "Chess", "chessEloPeak", 1600, 25, H"VGF2ZXJuIENoYW1waW9u", H"UmVhY2ggYSBjaGVzcyByYXRpbmcgb2YgMTYwMC4=", "INV_Crown_01",
          "Climb higher than anyone at the board."),
     stat("chessLose5",  "Chess", "chessLosses", 5,  5,  "Pawn Sacrifice",            "Lose 5 games of chess. For the greater good.", "INV_Misc_Bone_HumanSkull_01"),
-    event("chessScholar",  "Chess", 15, "Scholar's Mate", "Checkmate a guildie within your first four moves.", "INV_Misc_Book_09",
+    event("chessScholar",  "Chess", 15, H"U2Nob2xhcidzIE1hdGU=", H"Q2hlY2ttYXRlIGEgZ3VpbGRpZSB3aXRoaW4geW91ciBmaXJzdCBmb3VyIG1vdmVzLg==", "INV_Misc_Book_09",
           "Some lessons are short."),
-    event("chessBoss",     "Chess", 15, "Checkmate, Boss", "Checkmate the Guild Master.", "INV_Crown_01",
+    event("chessBoss",     "Chess", 15, H"Q2hlY2ttYXRlLCBCb3Nz", H"Q2hlY2ttYXRlIHRoZSBHdWlsZCBNYXN0ZXIu", "INV_Crown_01",
           "Someone at the top is about to have a bad game."),
     event("chessResign",   "Chess", 5,  "Tipping the King", "Resign a game of chess.", "Ability_Rogue_FeignDeath"),
-    event("chessStalemate","Chess", 10, "Nobody Wins", "Draw a game by stalemate.", "Spell_Nature_Sleep",
+    event("chessStalemate","Chess", 10, H"Tm9ib2R5IFdpbnM=", H"RHJhdyBhIGdhbWUgYnkgc3RhbGVtYXRlLg==", "Spell_Nature_Sleep",
           "Win so hard you lose. Well, draw."),
     event("chessPawnStar", "Chess", 5,  "Pawn Star", "Promote a pawn to a queen.", "INV_Crown_01"),
-    event("chessHorsing",  "Chess", 10, "Horsing Around", "Promote a pawn to a knight.", "Ability_Mount_RidingHorse",
+    event("chessHorsing",  "Chess", 10, H"SG9yc2luZyBBcm91bmQ=", H"UHJvbW90ZSBhIHBhd24gdG8gYSBrbmlnaHQu", "Ability_Mount_RidingHorse",
           "A queen is so predictable."),
 
     -- Shame: dying, mostly
@@ -241,18 +264,18 @@ ns.STATIC = {
     stat("death250", "Shame", "deaths", 250, 25, "Basically a Ghost",                       "Die 250 times. At this point it's a lifestyle.",     "Spell_Holy_Resurrection"),
     stat("day5",     "Shame", "bestDayDeaths", 5,  5,  "Bad Day at the Office",             "Die 5 times in one day.",                            "Ability_Rogue_FeignDeath"),
     stat("day10",    "Shame", "bestDayDeaths", 10, 10, "Have You Tried Not Dying?",         "Die 10 times in one day.",                           "Ability_Rogue_FeignDeath"),
-    event("dieLow",   "Shame", 5,  "Tutorial Failed",            "Die before reaching level 10.",                  "Ability_Rogue_FeignDeath", "Happens early. Usually involves murlocs."),
-    event("dieRich",  "Shame", 10, "You Can't Take It With You", "Die while carrying 100 gold or more.",           "INV_Misc_Coin_01",         "Bring your wallet somewhere dangerous."),
-    event("dieQuick", "Shame", 10, "Speedrun to the Graveyard",  "Die within a minute of coming back to life.",    "Ability_Rogue_Sprint",     "You just got back. Why leave so soon?"),
-    event("dieDing",  "Shame", 10, "Ding! ...Dong.",             "Die within a minute of leveling up.",            "Spell_Shadow_DeathCoil",   "Celebrate responsibly."),
+    event("dieLow",   "Shame", 5,  H"VHV0b3JpYWwgRmFpbGVk",            H"RGllIGJlZm9yZSByZWFjaGluZyBsZXZlbCAxMC4=",                  "Ability_Rogue_FeignDeath", "Happens early. Usually involves murlocs."),
+    event("dieRich",  "Shame", 10, H"WW91IENhbid0IFRha2UgSXQgV2l0aCBZb3U=", H"RGllIHdoaWxlIGNhcnJ5aW5nIDEwMCBnb2xkIG9yIG1vcmUu",           "INV_Misc_Coin_01",         "Bring your wallet somewhere dangerous."),
+    event("dieQuick", "Shame", 10, H"U3BlZWRydW4gdG8gdGhlIEdyYXZleWFyZA==",  H"RGllIHdpdGhpbiBhIG1pbnV0ZSBvZiBjb21pbmcgYmFjayB0byBsaWZlLg==",    "Ability_Rogue_Sprint",     "You just got back. Why leave so soon?"),
+    event("dieDing",  "Shame", 10, H"RGluZyEgLi4uRG9uZy4=",             H"RGllIHdpdGhpbiBhIG1pbnV0ZSBvZiBsZXZlbGluZyB1cC4=",            "Spell_Shadow_DeathCoil",   "Celebrate responsibly."),
     event("dieRaid",  "Shame", 5,  "Wipe Contributor",           "Die in a raid group. Teamwork!",                 "INV_Misc_Bone_HumanSkull_01"),
     event("dieMax",   "Shame", 5,  "Endgame Content",            "Die at level 60. All that leveling, for this.",  "INV_Misc_Bone_HumanSkull_01"),
-    event("fallDeath",  "Shame", 10, "Gravity Wins",  "Die from falling.",       "Ability_Rogue_FeignDeath", "What goes up..."),
-    event("drownDeath", "Shame", 10, "Forgot Gills",  "Drown.",                  "Ability_Rogue_FeignDeath", "Breathing is important."),
-    event("lavaDeath",  "Shame", 10, "Hot Tub Time",  "Die in lava or fire.",    "Ability_Rogue_FeignDeath", "It looked warm."),
-    event("hated",      "Shame", 5,  "Persona Non Grata", "Be Hated by a faction.", "Ability_Rogue_Disguise", "Make some enemies. Officially."),
-    { id = "broke", cat = "Shame", type = "cond", points = 5, name = "On What Money?",
-      desc = "Be level 40 or higher with less than 1 gold.", icon = I .. "INV_Misc_Coin_03",
+    event("fallDeath",  "Shame", 10, H"R3Jhdml0eSBXaW5z",  H"RGllIGZyb20gZmFsbGluZy4=",       "Ability_Rogue_FeignDeath", "What goes up..."),
+    event("drownDeath", "Shame", 10, H"Rm9yZ290IEdpbGxz",  H"RHJvd24u",                  "Ability_Rogue_FeignDeath", "Breathing is important."),
+    event("lavaDeath",  "Shame", 10, H"SG90IFR1YiBUaW1l",  H"RGllIGluIGxhdmEgb3IgZmlyZS4=",    "Ability_Rogue_FeignDeath", "It looked warm."),
+    event("hated",      "Shame", 5,  H"UGVyc29uYSBOb24gR3JhdGE=", H"QmUgSGF0ZWQgYnkgYSBmYWN0aW9uLg==", "Ability_Rogue_Disguise", "Make some enemies. Officially."),
+    { id = "broke", cat = "Shame", type = "cond", points = 5, name = H"T24gV2hhdCBNb25leT8=",
+      desc = H"QmUgbGV2ZWwgNDAgb3IgaGlnaGVyIHdpdGggbGVzcyB0aGFuIDEgZ29sZC4=", icon = I .. "INV_Misc_Coin_03",
       hidden = true, hint = "Check your wallet. Then cry.",
       check = function(s) return s.level >= 40 and s.money < 10000 end },
     { id = "shameless", cat = "Shame", type = "cat_count", category = "Shame", value = 10, points = 10,
