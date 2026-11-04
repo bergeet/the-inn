@@ -201,13 +201,18 @@ end
 -- Bags and the quest log
 -- ---------------------------------------------------------------------------
 
-local OLD_CONTAINER_API = { GetContainerNumFreeSlots = GetContainerNumFreeSlots, GetContainerNumSlots = GetContainerNumSlots }
-
-local function ContainerCall(name, bag)
-    local fn = (C_Container and C_Container[name]) or OLD_CONTAINER_API[name]
+-- Each C_Container function is named in full (no C_Container[name]) so the
+-- API test can check it against its allowlist.
+local function ContainerCall(fn, bag)
     if not fn then return nil end
     local ok, a, b = pcall(fn, bag)
     if ok then return a, b end
+end
+local function NumFreeSlots(bag)
+    return ContainerCall(C_Container and C_Container.GetContainerNumFreeSlots or GetContainerNumFreeSlots, bag)
+end
+local function NumSlots(bag)
+    return ContainerCall(C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots, bag)
 end
 
 local bagCheckPending = false
@@ -216,10 +221,10 @@ local function CheckBags()
     if not Ready() then return end
     local free, slots = 0, 0
     for bag = 0, 4 do
-        local n, bagType = ContainerCall("GetContainerNumFreeSlots", bag)
+        local n, bagType = NumFreeSlots(bag)
         if (bagType or 0) == 0 then -- ignore special bags (quivers, herb bags...)
             free = free + (n or 0)
-            slots = slots + (ContainerCall("GetContainerNumSlots", bag) or 0)
+            slots = slots + (NumSlots(bag) or 0)
         end
     end
     if slots >= 16 and free == 0 then ns.Earn("bagsFull") end

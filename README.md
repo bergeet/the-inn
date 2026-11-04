@@ -38,7 +38,17 @@ ln -s "$PWD/TheInn" "/Applications/World of Warcraft/_classic_era_/Interface/Add
 
 ## Staying within Blizzard's rules
 
-The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The `addon only uses approved game APIs` test fails if code starts calling any game function that isn't on its allowlist. Review anything new before adding it there. A second test, `addon never crafts, casts, or changes the profession window`, fails if names like `CraftRecipe` or `ExpandTradeSkillSubClass` appear anywhere in the code, even inside an allowed namespace such as `C_TradeSkillUI`. The Workshop only reads the profession window while the player has it open. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
+The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The Workshop only reads the profession window while the player has it open. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
+
+The `addon only uses approved game APIs` test enforces this on every file in the TOC. It checks code only: comments and text in strings never count.
+
+- **Globals.** Every game global the code reads is on `ALLOWED_GLOBALS` in `tests/run.lua`. The only globals it writes are its own saved variables and slash commands, so it never replaces a game function.
+- **Namespace fields.** Allowing `C_TradeSkillUI` would also allow its crafting calls, so each `C_` namespace has its own list of fields in `NAMESPACE_FIELDS`. Code must write `C_Name.Field` out in full: no local holding a namespace, no `C_Name[computed key]`. The test can then see every field it touches. `HOOKED_FIELDS` lists the few action functions the addon only post-hooks to count (abandoned quests, emotes). Those may be hooked or nil-checked, never called.
+- **Denylist.** `FORBIDDEN_NAMES` (crafting, casting, using items, opening, expanding or filtering the profession windows, running code from strings) may not appear anywhere in the code, on any object. This is **The Inn's own rule, not a list of what Blizzard bans**. Some of these functions are protected by the client anyway. Others, like `ExpandTradeSkillSubClass`, are fine for addons in general but have no place in one that only reads and shares. `CraftRecipe` stays on it for good.
+
+A new game API is a review step. Add it to the right list with a comment on why the addon needs it, and check that it only reads state or drives The Inn's own UI. The test `API policy catches what it should, and only that` feeds the checker known-good and known-bad snippets; extend it when changing the checker.
+
+The simulator can't prove the live client agrees. Before a release that touches game APIs, sync or the Workshop, run the checklist in [docs/live-client-testing.md](docs/live-client-testing.md) in game.
 
 ## Releasing
 

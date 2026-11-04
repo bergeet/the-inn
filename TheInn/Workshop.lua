@@ -166,21 +166,24 @@ end
 
 -- Looking at someone else's recipes (a profession link, a guild crafter
 -- list, an NPC)? Then the window isn't ours to record.
+-- (C_TradeSkillUI is always written out in full, never kept in a local:
+-- the API test checks each of its fields against an allowlist.)
 local function NotMine()
-    local T = C_TradeSkillUI
-    if T and (Call(T.IsTradeSkillLinked) or Call(T.IsTradeSkillGuild) or Call(T.IsNPCCrafting)) then return true end
+    if C_TradeSkillUI and (Call(C_TradeSkillUI.IsTradeSkillLinked) or Call(C_TradeSkillUI.IsTradeSkillGuild)
+                           or Call(C_TradeSkillUI.IsNPCCrafting)) then
+        return true
+    end
     return Call(IsTradeSkillLinked) and true or false
 end
 
 -- The profession in the open trade skill window: key, rank, max
 local function TradeSkillLine()
-    local T = C_TradeSkillUI
-    if T then
-        local info = Call(T.GetBaseProfessionInfo)
+    if C_TradeSkillUI then
+        local info = Call(C_TradeSkillUI.GetBaseProfessionInfo)
         if type(info) == "table" and info.professionID then
             return W.Key(info.professionName, info.professionID), info.skillLevel, info.maxSkillLevel
         end
-        local id, name, rank, max = Call(T.GetTradeSkillLine)
+        local id, name, rank, max = Call(C_TradeSkillUI.GetTradeSkillLine)
         if id or name then return W.Key(name, id), rank, max end
     end
     local name, rank, max = Call(GetTradeSkillLine)
@@ -235,11 +238,10 @@ function W.ScanTradeSkill()
     local key, rank, max = TradeSkillLine()
     if not key then return end
     local ids, complete = {}, true
-    local T = C_TradeSkillUI
-    if T and T.GetAllRecipeIDs then
+    if C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs then
         -- Newer clients list every recipe of the profession, learned or not
-        for _, id in ipairs(Call(T.GetAllRecipeIDs) or {}) do
-            local info = Call(T.GetRecipeInfo, id)
+        for _, id in ipairs(Call(C_TradeSkillUI.GetAllRecipeIDs) or {}) do
+            local info = Call(C_TradeSkillUI.GetRecipeInfo, id)
             if type(info) == "table" and info.learned then ids[#ids + 1] = tostring(id) end
         end
     else

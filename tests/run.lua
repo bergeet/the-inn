@@ -1936,9 +1936,13 @@ test("slash command help and settings", function()
 end)
 
 -- ---------------------------------------------------------------------------
--- Policy: the addon only touches an approved set of game APIs. Anything that
--- could automate gameplay (casting, movement, targeting, item use) is absent,
--- and this test fails if new code starts calling something not on the list.
+-- Policy: the addon only reads game state, draws its own UI and talks over
+-- the guild addon channel. These tests read the compiled bytecode of every
+-- file in the TOC (so comments and prose never count, only code) and fail
+-- when the code reaches for a game API nobody has reviewed.
+--
+-- Adding to an allowlist below is a review step: say in a comment what the
+-- API is for, and check it only reads state or drives The Inn's own UI.
 -- ---------------------------------------------------------------------------
 
 local ALLOWED_GLOBALS = {
@@ -1973,7 +1977,7 @@ local ALLOWED_GLOBALS = {
     -- Messaging: hidden guild addon channel, and the opt-in guild chat line
     "C_ChatInfo", "SendChatMessage",
     -- 0.7 Workshop: reading the player's own profession window while they have
-    -- it open (never opening, expanding or crafting; see the test below)
+    -- it open (never opening, expanding or crafting; see the tests below)
     "C_TradeSkillUI", "IsTradeSkillLinked", "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo",
     "GetTradeSkillRecipeLink", "GetTradeSkillItemLink",
     "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "GetCraftRecipeLink", "GetCraftItemLink",
@@ -1981,57 +1985,254 @@ local ALLOWED_GLOBALS = {
     "ItemRefTooltip", "TooltipDataProcessor",           -- the "Craftable by" tooltip line (post-hook)
 }
 
--- Names that must never appear anywhere in the addon's code, not even as a
--- field of an allowed namespace (C_TradeSkillUI also has crafting calls).
+-- Allowing a C_ namespace above is not enough: most namespaces mix reads
+-- with actions (C_TradeSkillUI can craft, C_Container can pick up and use
+-- items, C_GuildInfo can kick). The code may only read the fields listed
+-- here, always written out as C_Name.Field (no locals holding a namespace,
+-- no C_Name[computed key]), so every field it touches is visible.
+local NAMESPACE_FIELDS = {
+    C_Timer        = { "After", "NewTicker" },                                    -- own timers
+    C_ChatInfo     = { "RegisterAddonMessagePrefix", "SendAddonMessage",          -- guild addon channel
+                       "SendChatMessage" },                                       -- the opt-in guild chat line
+    C_GuildInfo    = { "GuildRoster" },                                           -- refresh the guild list
+    C_ClassColor   = { "GetClassColor" },                                         -- name colors
+    C_QuestLog     = { "GetAllCompletedQuestIDs", "GetNumQuestLogEntries", "GetMaxNumQuestsCanAccept" },
+    C_Reputation   = { "GetNumFactions", "GetFactionDataByIndex" },               -- exalted achievements
+    C_Container    = { "GetContainerNumFreeSlots", "GetContainerNumSlots" },      -- "bags full"
+    C_Spell        = { "GetSpellName" },                                          -- recipe names
+    C_Item         = { "GetItemNameByID" },                                       -- recipe names
+    C_TradeSkillUI = { "IsTradeSkillLinked", "IsTradeSkillGuild", "IsNPCCrafting", -- is the open window ours?
+                       "GetBaseProfessionInfo", "GetTradeSkillLine",              -- which profession, what skill
+                       "GetAllRecipeIDs", "GetRecipeInfo" },                      -- which recipes are learned
+}
+
+-- Fields the code may only name for hooksecurefunc(C_Name, "Field", ...) or
+-- test for existence, never read to call: post-hooks that count what the
+-- player did, without changing or repeating it.
+local HOOKED_FIELDS = {
+    C_QuestLog = { "AbandonQuest" },  -- "abandoned quests" stat
+    C_ChatInfo = { "PerformEmote" },  -- emote stats
+}
+
+-- The Inn's own rule, not a list of functions Blizzard bans: these names
+-- must not appear anywhere in the code, on any object. Some are protected
+-- by the client and would be blocked anyway; others are allowed for addons
+-- in general (an addon may expand the profession window it shows, say) but
+-- have no place in one that only reads and shares. The Inn never crafts,
+-- casts, uses items, runs code from strings, or opens, closes, expands,
+-- filters or selects anything in the game's own profession windows.
 local FORBIDDEN_NAMES = {
+    -- Crafting and casting
     "CraftRecipe", "RecraftRecipe", "DoTradeSkill", "DoCraft", "CastSpell", "CastSpellByName", "CastSpellByID",
-    "UseItemByName", "UseContainerItem", "OpenTradeSkill", "CloseTradeSkill", "CloseCraft",
+    -- Using items
+    "UseItemByName", "UseContainerItem", "PickupContainerItem",
+    -- Changing the profession window (opening, closing, expanding, filtering, selecting)
+    "OpenTradeSkill", "CloseTradeSkill", "CloseCraft",
     "ExpandTradeSkillSubClass", "CollapseTradeSkillSubClass", "ExpandCraftSkillLine", "CollapseCraftSkillLine",
     "SetTradeSkillSubClassFilter", "SetTradeSkillInvSlotFilter", "TradeSkillOnlyShowMakeable",
     "SetRecipeItemNameFilter", "SetOnlyShowLearnedRecipes", "SetOnlyShowMakeableRecipes",
-    "SelectTradeSkill", "SelectCraft", "RunMacro", "RunMacroText", "RunScript",
+    "SelectTradeSkill", "SelectCraft",
+    -- Running code or macros from strings
+    "RunMacro", "RunMacroText", "RunScript", "loadstring", "getfenv", "setfenv", "rawget", "_G",
 }
 
+local function Set(list)
+    local s = {}
+    for _, v in ipairs(list) do s[v] = true end
+    return s
+end
+local function SetOfSets(map)
+    local s = {}
+    for ns, fields in pairs(map) do s[ns] = Set(fields) end
+    return s
+end
 
-test("addon only uses approved game APIs", function()
-    local allowed = {}
-    for _, g in ipairs(ALLOWED_GLOBALS) do allowed[g] = true end
-    local bad, seen = {}, {}
-    local toc = Sim.ADDON_DIR .. "/TheInn.toc"
-    for line in io.lines(toc) do
-        local file = line:gsub("\r", ""):match("^%s*(.-)%s*$")
-        if file ~= "" and not file:find("^#") then
-            local pipe = assert(io.popen("luajit -bl '" .. Sim.ADDON_DIR .. "/" .. file .. "'"))
-            for l in pipe:lines() do
-                local name = l:match('G[GS]ET.-"([%w_]+)"')
-                if name and not allowed[name] and not seen[file .. name] then
-                    seen[file .. name] = true
-                    bad[#bad + 1] = file .. ": " .. name
-                end
-            end
-            pipe:close()
+-- The bytecode listing of one Lua file, as an array of lines
+local function Listing(path)
+    local pipe = assert(io.popen("luajit -bl '" .. path .. "'"))
+    local lines = {}
+    for l in pipe:lines() do lines[#lines + 1] = l end
+    pipe:close()
+    return lines
+end
+
+-- Lua source as tokens, without comments: { kind = "name"|"string"|"op", value }
+local function Tokens(src)
+    local toks, i, n = {}, 1, #src
+    local function Add(kind, value) toks[#toks + 1] = { kind = kind, value = value } end
+    local function LongEnd(from, eq) -- index after the closing ]==] of a long bracket
+        local _, e = src:find("]" .. eq .. "]", from, true)
+        return (e or n) + 1
+    end
+    while i <= n do
+        local c = src:sub(i, i)
+        if c:match("%s") then
+            i = i + 1
+        elseif src:sub(i, i + 1) == "--" then
+            local eq = src:match("^%[(=*)%[", i + 2)
+            i = eq and LongEnd(i + 2, eq) or ((src:find("\n", i, true) or n) + 1)
+        elseif c == '"' or c == "'" then
+            local j = i + 1
+            while j <= n and src:sub(j, j) ~= c do j = j + (src:sub(j, j) == "\\" and 2 or 1) end
+            Add("string", src:sub(i + 1, j - 1))
+            i = j + 1
+        elseif src:match("^%[=*%[", i) then
+            local eq = src:match("^%[(=*)%[", i)
+            local e = LongEnd(i, eq)
+            Add("string", src:sub(i + #eq + 2, e - #eq - 3))
+            i = e
+        elseif c:match("[%a_]") then
+            local w = src:match("^[%w_]+", i)
+            Add("name", w)
+            i = i + #w
+        elseif c:match("%d") then
+            i = i + #src:match("^[%w%.]+", i)
+        else
+            local op = src:match("^%.%.%.?", i) or src:match("^[=~<>]=", i) or c
+            Add("op", op)
+            i = i + #op
         end
     end
-    ok(#bad == 0, "unapproved globals (review, then add to ALLOWED_GLOBALS if safe):\n  " .. table.concat(bad, "\n  "))
-end)
+    return toks
+end
 
-test("addon never crafts, casts, or changes the profession window", function()
-    local forbidden = {}
-    for _, n in ipairs(FORBIDDEN_NAMES) do forbidden[n] = true end
-    local bad = {}
+local function Is(t, kind, value) return t and t.kind == kind and (value == nil or t.value == value) end
+
+-- Every problem the policy finds in one file, as strings
+local function PolicyProblems(path)
+    local allowed, forbidden = Set(ALLOWED_GLOBALS), Set(FORBIDDEN_NAMES)
+    local writable = Set({ "GuildAchDB", "GuildAchCharDB", "SLASH_GUILDACHIEVEMENTS1", "SLASH_GUILDACHIEVEMENTS2",
+                           "SLASH_GUILDACHIEVEMENTS3" })
+    local fields, hooked = SetOfSets(NAMESPACE_FIELDS), SetOfSets(HOOKED_FIELDS)
+    local problems, seen = {}, {}
+    local function Problem(msg)
+        if not seen[msg] then seen[msg] = true; problems[#problems + 1] = msg end
+    end
+
+    -- From the bytecode, which knows a global from a local of the same name
+    for _, l in ipairs(Listing(path)) do
+        -- 1. Every global read is on the allowlist; only our own are written
+        local global = l:match('GGET.-"([%w_]+)"')
+        if global and not allowed[global] then Problem("unapproved global " .. global) end
+        local written = l:match('GSET.-"([%w_]+)"')
+        if written and not writable[written] then Problem("writes the global " .. written) end
+        -- 2. No string constant (global, field or hook name) is on the denylist
+        for name in l:gmatch('"([%w_]+)"') do
+            if forbidden[name] then Problem("forbidden name " .. name) end
+        end
+    end
+
+    -- 3. From the source: a namespace is only used as C_Name.Field (each field
+    --    on its list, never assigned to), in a nil check (C_Name and ... /
+    --    if C_Name then), or as hooksecurefunc(C_Name, "HookedField", ...)
+    local f = assert(io.open(path))
+    local toks = Tokens(f:read("*a"))
+    f:close()
+    for k, t in ipairs(toks) do
+        local prev = toks[k - 1]
+        if Is(t, "name") and t.value:match("^C_%u") and not Is(prev, "op", ".") and not Is(prev, "op", ":") then
+            local ns, nxt, key, after = t.value, toks[k + 1], toks[k + 2], toks[k + 3]
+            if Is(nxt, "op", ".") and Is(key, "name") then
+                local field = ns .. "." .. key.value
+                local nilCheck = Is(after, "name", "then") or Is(after, "name", "and")
+                if Is(after, "op", "=") then
+                    Problem("assigns to " .. field)
+                elseif not (fields[ns] and fields[ns][key.value])
+                       and not (nilCheck and hooked[ns] and hooked[ns][key.value]) then
+                    Problem("unapproved field " .. field)
+                end
+            elseif Is(nxt, "name", "and") or Is(nxt, "name", "then") then
+                -- a nil check
+            elseif Is(nxt, "op", ",") and Is(key, "string") and hooked[ns] and hooked[ns][key.value]
+                   and (Is(prev, "op", "(") or Is(prev, "op", ","))
+                   and Is(toks[k - 2], "name", "hooksecurefunc") then
+                -- hooksecurefunc(C_Name, "Field", fn) or pcall(hooksecurefunc, C_Name, "Field", fn)
+            else
+                Problem(ns .. " kept in a variable, indexed with a computed key, or passed around"
+                        .. " (write " .. ns .. ".Field so the field can be checked)")
+            end
+        end
+    end
+    return problems
+end
+
+local function AddonFiles()
+    local files = {}
     for line in io.lines(Sim.ADDON_DIR .. "/TheInn.toc") do
         local file = line:gsub("\r", ""):match("^%s*(.-)%s*$")
-        if file ~= "" and not file:find("^#") then
-            local pipe = assert(io.popen("luajit -bl '" .. Sim.ADDON_DIR .. "/" .. file .. "'"))
-            for l in pipe:lines() do
-                for name in l:gmatch('"([%w_]+)"') do
-                    if forbidden[name] then bad[#bad + 1] = file .. ": " .. name end
-                end
-            end
-            pipe:close()
+        if file ~= "" and not file:find("^#") then files[#files + 1] = file end
+    end
+    return files
+end
+
+test("addon only uses approved game APIs", function()
+    local bad = {}
+    for _, file in ipairs(AddonFiles()) do
+        for _, p in ipairs(PolicyProblems(Sim.ADDON_DIR .. "/" .. file)) do bad[#bad + 1] = file .. ": " .. p end
+    end
+    ok(#bad == 0, "API policy (review, then add to the allowlists in tests/run.lua if it only reads state):\n  "
+       .. table.concat(bad, "\n  "))
+end)
+
+test("API allowlists and denylist agree", function()
+    local forbidden, allowed = Set(FORBIDDEN_NAMES), Set(ALLOWED_GLOBALS)
+    for _, map in ipairs({ NAMESPACE_FIELDS, HOOKED_FIELDS }) do
+        for ns, list in pairs(map) do
+            ok(allowed[ns], ns .. " has fields listed but isn't an allowed global")
+            for _, f in ipairs(list) do ok(not forbidden[f], ns .. "." .. f .. " is both allowed and forbidden") end
         end
     end
-    ok(#bad == 0, "forbidden names in the code:\n  " .. table.concat(bad, "\n  "))
+    for _, g in ipairs(ALLOWED_GLOBALS) do
+        ok(not forbidden[g], g .. " is both allowed and forbidden")
+        if g:match("^C_") then ok(NAMESPACE_FIELDS[g], g .. " is allowed but has no field list") end
+    end
+end)
+
+-- The checker itself: code that should fail does, code that should pass does
+test("API policy catches what it should, and only that", function()
+    local path = os.tmpname()
+    local function Check(src)
+        local f = assert(io.open(path, "w"))
+        f:write(src)
+        f:close()
+        return PolicyProblems(path)
+    end
+    local bad = {
+        "C_TradeSkillUI.CraftRecipe(1)",                         -- denylisted
+        "local T = C_TradeSkillUI\nT.CraftRecipe(1)",            -- denylisted, via an alias
+        "local T = C_TradeSkillUI\nT.GetRecipeInfo(1)",          -- alias
+        "C_TradeSkillUI['Craft' .. 'Recipe'](1)",                -- computed key
+        "C_Container.PickupItem(0, 1)",                          -- an unlisted field
+        "C_GuildInfo.Uninvite('Bob')",                           -- an unlisted field
+        "C_QuestLog.AbandonQuest()",                             -- a hooked field, called
+        "local x = C_QuestLog.AbandonQuest",                     -- a hooked field, read
+        "pairs(C_TradeSkillUI)",                                 -- passed around
+        "local T = C_TradeSkillUI or {}",                        -- alias
+        "CastSpellByName('Hearthstone')",                        -- denylisted global
+        "TradeSkillFrame:Hide()",                                -- unlisted global
+        "local g = _G\ng.print('x')",                            -- denylisted
+        "local T = C_TradeSkillUI\nif T then T.GetRecipeInfo(1) end", -- alias, then a nil check
+        "C_ChatInfo.SendAddonMessage = print",                   -- replaces a game function
+        "GetMoney = function() return 0 end",                    -- replaces a game function
+        "hooksecurefunc(C_TradeSkillUI, 'CraftRecipe', print)",  -- not a reviewed hook (and denylisted)
+        "hooksecurefunc(C_GuildInfo, 'Uninvite', print)",        -- not a reviewed hook
+    }
+    local good = {
+        "-- C_TradeSkillUI.CraftRecipe and ExpandTradeSkillSubClass are never called\nprint(1)",
+        "print('This addon never calls CraftRecipe')",
+        "if C_TradeSkillUI and C_TradeSkillUI.GetRecipeInfo then C_TradeSkillUI.GetRecipeInfo(1) end",
+        "local f = C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots",
+        "if C_QuestLog and C_QuestLog.AbandonQuest then hooksecurefunc(C_QuestLog, 'AbandonQuest', print) end",
+        "pcall(hooksecurefunc, C_ChatInfo, 'PerformEmote', print)",
+        "--[[ local T = C_TradeSkillUI ]] print([[C_Container.UseContainerItem]])",
+        "GuildAchDB = GuildAchDB or {}",
+    }
+    for _, src in ipairs(bad) do ok(#Check(src) > 0, "the policy should reject: " .. src) end
+    for _, src in ipairs(good) do
+        local p = Check(src)
+        ok(#p == 0, "the policy should accept: " .. src .. "\n  " .. table.concat(p, "\n  "))
+    end
+    os.remove(path)
 end)
 
 -- ---------------------------------------------------------------------------
