@@ -105,6 +105,10 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.9.1**
+- The X in the corner closes the window again. It used to hide only the header (the sign, your name and bar tab), which then stayed gone.
+- The Scoreboard, the notice board heading and the chess window title use the same easy-to-read font as the rest of the window. The sign keeps its old one.
+
 **0.9.0**
 - Chess: the Chess tab is now a lobby, and the board window is the one place to play. Challenge by typing a name, by your target, or from the online list, which now shows every online guildie (the ones the addon hasn't heard from yet are marked "no addon?").
 - Chess: Resign moved off the spot where "Play the barkeep" sits and now takes two clicks, so a double-click can't throw a game.
