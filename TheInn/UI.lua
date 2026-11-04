@@ -2,47 +2,61 @@ local addonName, ns = ...
 local UI = {}
 ns.UI = UI
 
--- The window is a tavern: plank walls, an inn sign hanging over the top
--- (with your guild's name on it), achievements as
--- plaques on the Trophy Wall, the leaderboards chalked on a Scoreboard, and
--- the feed as Tavern Gossip.
+-- The window is a tavern: plank walls, a small sign over the door with the
+-- guild's name, and rooms you walk between with the tabs along the bottom
+-- edge (like the game's own Character and Guild windows):
+--   Common Room  what's within reach, last night's gossip, who's at the bar,
+--                and the notice board
+--   Trophy Wall  achievements as plaques
+--   Scoreboard   leaderboards chalked on a board
+--   Gossip       the feed, pinned to a cork board one note per day
+--   Chess        the board, your rating, the barkeep and challengers
+--   Workshop     professions and recipes
+-- Settings open from the cog in the header. Text uses the game's own fonts
+-- (Friz Quadrata, Morpheus, Arial Narrow) and every icon is a game icon.
 
 -- ---------------------------------------------------------------------------
--- Layout, colors, textures
+-- Layout, colors, fonts, textures
 -- ---------------------------------------------------------------------------
 
-local W, H = 720, 600
-local SIGN_W, SIGN_H, SIGN_RISE = 320, 160, 46 -- the sign pokes out above the window
-local HEADER_H = 112
-local TAB_Y = HEADER_H + 20
-local TAB_H, TAB_W, SIDE_W = 26, 132, 150
-local BODY_TOP = TAB_Y + TAB_H + 8
-local LIST_X = 14 + SIDE_W + 10
-local LIST_W = W - LIST_X - 34
-local ROW_H, LINE_H, SIDE_H = 54, 24, 26
-
-local GOLD, GREY, RED, GREEN, BLUE = "|cffffd100", "|cff9d9d9d", "|cffff6b6b", "|cff7fff7f", "|cff88ccff"
-local CHALK = "|cffeeeee4"
-local MEDAL = { "|cffffd100", "|cffc8c8d2", "|cffd08a4a" } -- gold, silver, bronze
+local W, H = 900, 640
+local PANEL_H = 596                      -- the tavern itself; the tabs hang below it
+local HEADER_H = 72
+local PAD, GAP = 16, 14
+local BODY_TOP = HEADER_H + 14
+local BODY_W = W - 2 * PAD               -- 868
+local BODY_H = PANEL_H - BODY_TOP - 16   -- 494
+local SIDE_W = 200
 
 local MEDIA = "Interface\\AddOns\\" .. addonName .. "\\Media\\"
-local EDGE = "Interface\\Tooltips\\UI-Tooltip-Border"
-local DIALOG_EDGE = "Interface\\DialogFrame\\UI-DialogBox-Border"
-local BAR = "Interface\\TargetingFrame\\UI-StatusBar"
 local ICONS = "Interface\\Icons\\"
+local BAR = "Interface\\TargetingFrame\\UI-StatusBar"
 local SKULL = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8"
 local STAR = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
 local QUESTION = ICONS .. "INV_Misc_QuestionMark"
-local SIGN_FONT = "Fonts\\MORPHEUS.TTF"
+local ONLINE = "Interface\\FriendsFrame\\StatusIcon-Online"
+local OFFLINE = "Interface\\FriendsFrame\\StatusIcon-Offline"
 
-local C_GOLD = { 0.85, 0.66, 0.25 }
-local C_SHAME = { 0.8, 0.22, 0.2 }
-local C_IRON = { 0.35, 0.33, 0.32 }
--- Plank tints (the plank texture is multiplied by these)
-local T_ROW = { 0.55, 0.5, 0.46, 1 }
-local T_EARNED = { 1, 0.9, 0.75, 1 }
-local T_SHAME = { 0.85, 0.45, 0.4, 1 }
+-- The game's own fonts
+local FRIZ = "Fonts\\FRIZQT__.TTF"
+local MORPHEUS = "Fonts\\MORPHEUS.TTF"
+local NARROW = "Fonts\\ARIALN.TTF"
 
+-- Text colors (as escape codes)
+local GOLD, CREAM, MUTED, SHAME = "|cffffd100", "|cffefe3c8", "|cffbca98a", "|cffff8a5c"
+local GREEN, RED, GREY, BLUE = "|cff8fd16a", "|cffff6b6b", "|cff9d9d9d", "|cff88ccff"
+local CHALK, CHALK_DIM, CHALK_GOLD = "|cffeef0e8", "|cffaeb4a8", "|cffffd84a"
+local INK_DIM, INK_NAME, INK_LINK, INK_SHAME = "|cff5a3f1f", "|cff1c4f78", "|cff7a4a00", "|cff8a2a0a"
+local MEDAL = { "|cffffd84a", "|cffd8dce0", "|cffe0a060" } -- gold, silver, bronze chalk
+
+-- The same palette as numbers, for textures and font strings
+local C = {
+    cream = { 0.94, 0.89, 0.78 }, gold = { 1, 0.82, 0 }, muted = { 0.74, 0.66, 0.54 },
+    chalk = { 0.93, 0.94, 0.91 }, chalkDim = { 0.68, 0.71, 0.66 }, chalkGold = { 1, 0.85, 0.29 },
+    ink = { 0.2, 0.14, 0.06 }, inkHead = { 0.23, 0.11, 0.03 }, inkDim = { 0.35, 0.25, 0.12 },
+    brass = { 0.79, 0.64, 0.29 }, rim = { 0.42, 0.33, 0.16 }, shame = { 0.77, 0.27, 0.17 },
+    dull = { 0.3, 0.26, 0.2 }, tab = { 0.85, 0.78, 0.65 },
+}
 -- ---------------------------------------------------------------------------
 -- Words
 -- ---------------------------------------------------------------------------
@@ -164,6 +178,15 @@ local SHAME_EARNED = {
 }
 local BADGE_SHAME = { "Achievement... unlocked?", "Nobody is proud of this.", "This goes on your permanent record." }
 
+
+local BARKEEP_QUIPS = {
+    "One more round and I'll go easy on ya.",
+    "I've been practising. Sit down.",
+    "Loser buys the next round. That's you, by the way.",
+    "Which way does the horsey go again?",
+    "I learned this game from a gnome. He cheated too.",
+}
+
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
@@ -191,10 +214,17 @@ local function ClassColored(name)
     return short
 end
 
+-- A name in class colors, or in dark ink on parchment (class colors are too
+-- light to read there)
+local function Who(name, ink)
+    if ink then return INK_NAME .. ns.BaseName(name or "?") .. "|r" end
+    return ClassColored(name)
+end
+
 -- "Ana", "Ana and Bob", "Ana, Bob and 3 others"
-local function NameList(names, max)
+local function NameList(names, max, ink)
     local shown = {}
-    for i = 1, math.min(#names, max) do shown[i] = ClassColored(names[i]) end
+    for i = 1, math.min(#names, max) do shown[i] = Who(names[i], ink) end
     local rest = #names - #shown
     if rest > 0 then
         return table.concat(shown, ", ") .. " and " .. rest .. " other" .. (rest == 1 and "" or "s")
@@ -211,6 +241,16 @@ local function Ago(ts)
     return math.floor(d / 86400) .. "d ago"
 end
 
+local function DayKey(ts) return date("%Y-%m-%d", ts) end
+
+-- "Today", "Yesterday", or "3 Nov"
+local function When(ts)
+    local now = ns.Now()
+    if DayKey(ts) == DayKey(now) then return "Today" end
+    if DayKey(ts) == DayKey(now - 86400) then return "Yesterday" end
+    return (date("%d %b", ts):gsub("^0", ""))
+end
+
 -- The sign shows the guild's name
 local function InnName()
     local g = ns.Guild and ns.Guild()
@@ -221,58 +261,6 @@ UI.InnName = InnName
 
 -- For "Welcome to the %s": "The Rusty Tankard" -> "Rusty Tankard"
 local function InnRef() return (InnName():gsub("^[Tt]he%s+", "")) end
-
-local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
-
-local function Tint(frame, bg, border)
-    if frame.SetBackdropColor then
-        frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
-        if border then frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1) end
-    end
-end
-
--- A frame with a texture background (stretched, not tiled) and a border.
-local function Panel(parent, name, bgFile, bg, border, edgeFile, edgeSize, kind)
-    local p = CreateFrame(kind or "Frame", name, parent, BACKDROP_TEMPLATE)
-    if p.SetBackdrop then
-        local inset = (edgeSize or 12) >= 24 and 11 or 3
-        p:SetBackdrop({ bgFile = bgFile, edgeFile = edgeFile or EDGE, edgeSize = edgeSize or 12, tile = false,
-                        insets = { left = inset, right = inset, top = inset, bottom = inset } })
-        Tint(p, bg, border)
-    end
-    return p
-end
-
-local function Bar(parent, w, h)
-    local b = CreateFrame("StatusBar", nil, parent)
-    b:SetSize(w, h)
-    b:SetStatusBarTexture(BAR)
-    b:SetStatusBarColor(0.85, 0.65, 0.1)
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints()
-    b.bg:SetColorTexture(0, 0, 0, 0.6)
-    return b
-end
-
-local function SignFont(fs, size)
-    if not pcall(fs.SetFont, fs, SIGN_FONT, size, "") then fs:SetFontObject("GameFontNormalHuge") end
-end
-
--- Largest sign font that fits the board; very long names wrap onto two lines.
-local SIGN_TEXT_W = SIGN_W - 64
-local function FitSignText(fs, text)
-    fs:SetWidth(0)
-    fs:SetWordWrap(false)
-    fs:SetText(text)
-    for size = 36, 20, -2 do
-        SignFont(fs, size)
-        local w = fs:GetStringWidth()
-        if not w or w <= SIGN_TEXT_W then return end
-    end
-    SignFont(fs, 20)
-    fs:SetWidth(SIGN_TEXT_W)
-    fs:SetWordWrap(true)
-end
 
 local function WhoHas(id)
     local g, out = ns.Guild(), {}
@@ -286,15 +274,167 @@ local function WhoHas(id)
     return out
 end
 
+local function IsOnline(name)
+    if name == ns.me then return true end
+    local e = ns.RosterEntry(name)
+    return e ~= nil and e.online == true
+end
+
 -- ---------------------------------------------------------------------------
--- State and pooled widgets
+-- Widget helpers
 -- ---------------------------------------------------------------------------
 
-local f, scroll, content
-local view, category, board, feedFilter = "ach", "All", "points", "all"
-local workshopProf, workshopWho, searchText = nil, nil, ""
-local achRows, lineRows, sideButtons, tabs = {}, {}, {}, {}
-local Render -- forward
+local function Font(fs, file, size, flags)
+    if not pcall(fs.SetFont, fs, file, size, flags or "") then fs:SetFontObject("GameFontNormal") end
+end
+
+local function Label(parent, size, color, font, layer)
+    local fs = parent:CreateFontString(nil, layer or "OVERLAY")
+    Font(fs, font or FRIZ, size or 12)
+    color = color or C.cream
+    fs:SetTextColor(color[1], color[2], color[3])
+    fs:SetJustifyH("LEFT")
+    fs:SetWordWrap(false)
+    return fs
+end
+
+local function Shadow(fs, a)
+    fs:SetShadowColor(0, 0, 0, a or 1)
+    fs:SetShadowOffset(1, -1)
+    return fs
+end
+
+local function Fill(parent, r, g, b, a, layer)
+    local t = parent:CreateTexture(nil, layer or "BACKGROUND")
+    t:SetColorTexture(r, g, b, a or 1)
+    return t
+end
+
+-- Lines along the edges of a frame (top, bottom, left, right)
+local function Border(frame, color, size, layer)
+    size = size or 1
+    local edges = {}
+    local sides = { { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" },
+                    { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }
+    for i, pts in ipairs(sides) do
+        local t = frame:CreateTexture(nil, layer or "BORDER")
+        t:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+        t:SetPoint(pts[1])
+        t:SetPoint(pts[2])
+        if i <= 2 then t:SetHeight(size) else t:SetWidth(size) end
+        edges[i] = t
+    end
+    frame.edges = edges
+    return edges
+end
+
+local function BorderColor(frame, c)
+    for _, t in ipairs(frame.edges or {}) do t:SetColorTexture(c[1], c[2], c[3], c[4] or 1) end
+end
+
+-- A dark, sunken panel in the wall
+local function Well(parent)
+    local w = CreateFrame("Frame", nil, parent)
+    Fill(w, 0.04, 0.025, 0.012, 0.62):SetAllPoints()
+    local shade = Fill(w, 0, 0, 0, 0.4, "BORDER") -- the lip casts a shadow inside
+    shade:SetPoint("TOPLEFT")
+    shade:SetPoint("TOPRIGHT")
+    shade:SetHeight(3)
+    Border(w, { 0.02, 0.012, 0.006, 1 })
+    return w
+end
+
+local function Heading(parent, text, size)
+    local fs = Shadow(Label(parent, size or 15, C.gold))
+    fs:SetText(text or "")
+    return fs
+end
+
+local function GoldBar(parent, w, h)
+    local b = CreateFrame("StatusBar", nil, parent)
+    b:SetSize(w, h)
+    b:SetStatusBarTexture(BAR)
+    b:SetStatusBarColor(1, 0.76, 0.18)
+    Fill(b, 0.07, 0.04, 0.02, 1):SetAllPoints()
+    Border(b, { 0, 0, 0, 1 })
+    b:SetMinMaxValues(0, 1)
+    b:SetValue(0)
+    return b
+end
+
+-- The game's own red panel button
+local function RedButton(parent, text, w, h, onClick)
+    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    b:SetSize(w or 110, h or 22)
+    b:SetText(text or "")
+    b.onClick = onClick
+    b:SetScript("OnClick", function(self) if self.onClick then self.onClick() end end)
+    return b
+end
+
+-- A wooden toggle: filter chips, and the picks in a sidebar
+local function Chip(parent, w, h)
+    local b = CreateFrame("Button", nil, parent)
+    b:SetSize(w, h or 24)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints()
+    b.bg:SetTexture(MEDIA .. "Plank")
+    Border(b, C.rim)
+    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+    b.hl:SetAllPoints()
+    b.hl:SetColorTexture(1, 0.82, 0, 0.1)
+    b.label = Shadow(Label(b, 12, C.cream))
+    b.label:SetPoint("LEFT", 10, 0)
+    b.count = Label(b, 13, C.muted, NARROW)
+    b.count:SetPoint("RIGHT", -8, 0)
+    b.count:SetJustifyH("RIGHT")
+    b:SetScript("OnClick", function(self) if self.onClick then self.onClick() end end)
+    return b
+end
+
+local function SetChip(b, label, count, on, color)
+    b.label:SetText(label)
+    b.count:SetText(count or "")
+    if on then
+        b.bg:SetVertexColor(1, 0.86, 0.5)
+        BorderColor(b, C.brass)
+        b.label:SetTextColor(0.12, 0.07, 0.02)
+        b.label:SetShadowColor(1, 0.9, 0.6, 0.4)
+        b.count:SetTextColor(0.25, 0.16, 0.06)
+    else
+        b.bg:SetVertexColor(0.42, 0.34, 0.27)
+        BorderColor(b, C.rim)
+        local c = color or C.cream
+        b.label:SetTextColor(c[1], c[2], c[3])
+        b.label:SetShadowColor(0, 0, 0, 1)
+        b.count:SetTextColor(C.muted[1], C.muted[2], C.muted[3])
+    end
+end
+
+local function SearchBox(parent, name, hint, w)
+    local e = CreateFrame("EditBox", name, parent, "InputBoxTemplate")
+    e:SetSize(w, 20)
+    e:SetAutoFocus(false)
+    e:SetMaxLetters(40)
+    e.hint = Label(e, 11, C.muted)
+    e.hint:SetPoint("LEFT", 2, 0)
+    e.hint:SetText(hint)
+    e.value = ""
+    e:SetScript("OnTextChanged", function(self)
+        local text = ns.Clean(self:GetText() or "", 40)
+        self.hint:SetShown(text == "")
+        if text == self.value then return end
+        self.value = text
+        if self.onChange then self.onChange(text) end
+    end)
+    e:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    e:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    return e
+end
+
+-- ---------------------------------------------------------------------------
+-- Tooltips
+-- ---------------------------------------------------------------------------
 
 local function ShowTooltip(self)
     local d = self.def
@@ -309,263 +449,645 @@ local function ShowTooltip(self)
     if earned then GameTooltip:AddDoubleLine("Earned", date("%Y-%m-%d %H:%M", earned), 0.7, 0.7, 0.7, 0.5, 1, 0.5) end
     local who = WhoHas(d.id)
     if #who > 0 then
-        GameTooltip:AddLine("Guildmates with this: " .. NameList(who, 6), 0.6, 0.8, 1, true)
+        GameTooltip:AddLine("Guildies with this: " .. NameList(who, 6), 0.6, 0.8, 1, true)
     elseif d.cat == "Shame" then
-        GameTooltip:AddLine("No guildmate has sunk this low yet.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("No guildie has sunk this low yet.", 0.6, 0.6, 0.6, true)
     else
-        GameTooltip:AddLine("No guildmate has this yet.", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("No guildie has this yet.", 0.6, 0.6, 0.6, true)
     end
     GameTooltip:Show()
 end
 
+local function RowEnter(self)
+    if self.def then return ShowTooltip(self) end
+    if self.tip and GameTooltip then
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(self.tip, 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end
+end
+
 local function HideTooltip() if GameTooltip then GameTooltip:Hide() end end
 
--- An achievement plaque on the Trophy Wall
-local function GetAchRow(i)
-    local r = achRows[i]
-    if r then return r end
-    r = Panel(content, nil, MEDIA .. "Plank", T_ROW, { 0.2, 0.13, 0.07 }, EDGE, 10, "Button")
-    r:SetSize(LIST_W, ROW_H - 4)
-    r:SetPoint("TOPLEFT", 0, -((i - 1) * ROW_H))
+-- ---------------------------------------------------------------------------
+-- Lists: rows of text, icons, bars and buttons, optionally scrolling.
+-- style: "wall" (light text on wood), "chalk" (the Scoreboard), "ink" (parchment)
+-- ---------------------------------------------------------------------------
 
-    r.iconBorder = r:CreateTexture(nil, "ARTWORK")
-    r.iconBorder:SetSize(42, 42)
-    r.iconBorder:SetPoint("LEFT", 6, 0)
+local STYLES = {
+    wall  = { font = FRIZ,     size = 13, sub = 11, right = NARROW,   rightSize = 14, color = C.cream, subColor = C.muted,
+              line = { 1, 0.86, 0.63, 0.07 } },
+    chalk = { font = MORPHEUS, size = 18, sub = 13, right = MORPHEUS, rightSize = 17, color = C.chalk, subColor = C.chalkDim,
+              line = { 0.93, 0.94, 0.91, 0.14 } },
+    ink   = { font = FRIZ,     size = 13, sub = 11, right = NARROW,   rightSize = 13, color = C.ink,   subColor = C.inkDim,
+              line = { 0.31, 0.2, 0.08, 0.25 } },
+}
+
+local scrollCount = 0
+
+local function List(room, parent, w, h, rowH, style, scrolls)
+    local list = { rowH = rowH or 26, style = STYLES[style or "wall"], rows = {}, n = 0, y = 0 }
+    if scrolls then
+        scrollCount = scrollCount + 1
+        local s = CreateFrame("ScrollFrame", "TheInnList" .. scrollCount, parent, "UIPanelScrollFrameTemplate")
+        s:SetSize(w - 24, h) -- the scroll bar hangs off the right edge
+        local content = CreateFrame("Frame", nil, s)
+        content:SetSize(w - 24, 1)
+        s:SetScrollChild(content)
+        list.scroll, list.content, list.w, list.h = s, content, w - 26, h
+    else
+        local content = CreateFrame("Frame", nil, parent)
+        content:SetSize(w, h)
+        list.scroll, list.content, list.w, list.h = content, content, w, h
+    end
+    room.lists[#room.lists + 1] = list
+    return list
+end
+
+local function NewRow(list, i)
+    local st = list.style
+    local r = CreateFrame("Button", nil, list.content)
+    r:SetFrameLevel(list.content:GetFrameLevel() + 3) -- above the notes on the cork board
+    r.band = Fill(r, 0.1, 0.066, 0.035, 1)
+    r.band:SetAllPoints()
+    r.line = r:CreateTexture(nil, "BORDER")
+    r.line:SetPoint("BOTTOMLEFT")
+    r.line:SetPoint("BOTTOMRIGHT")
+    r.line:SetHeight(1)
+    r.line:SetColorTexture(st.line[1], st.line[2], st.line[3], st.line[4])
+    r.rank = Label(r, st.size, st.color, st.font)
+    r.rank:SetJustifyH("RIGHT")
+    r.rank:SetWidth(30)
+    r.dot = r:CreateTexture(nil, "ARTWORK")
+    r.dot:SetSize(14, 14)
+    r.rim = r:CreateTexture(nil, "ARTWORK")
     r.icon = r:CreateTexture(nil, "OVERLAY")
-    r.icon:SetSize(38, 38)
-    r.icon:SetPoint("CENTER", r.iconBorder, "CENTER")
-
-    r.name = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    r.name:SetPoint("TOPLEFT", 56, -8)
-    r.name:SetPoint("RIGHT", -130, 0)
-    r.name:SetJustifyH("LEFT")
-    r.name:SetShadowColor(0, 0, 0, 1)
-    r.name:SetShadowOffset(1, -1)
-    r.desc = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.desc:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -4)
-    r.desc:SetPoint("RIGHT", -130, 0)
-    r.desc:SetJustifyH("LEFT")
-    r.desc:SetShadowColor(0, 0, 0, 1)
-    r.desc:SetShadowOffset(1, -1)
-
-    -- Points on a gold coin
-    r.coin = r:CreateTexture(nil, "ARTWORK")
-    r.coin:SetSize(34, 34)
-    r.coin:SetPoint("TOPRIGHT", -12, -2)
-    r.coin:SetTexture(MEDIA .. "AlertShield")
-    r.points = r:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    r.points:SetPoint("CENTER", r.coin, "CENTER", 0, 2)
-
-    r.status = r:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.status:SetPoint("BOTTOMRIGHT", -10, 6)
-    r.status:SetShadowColor(0, 0, 0, 1)
-    r.status:SetShadowOffset(1, -1)
-
-    r.bar = Bar(r, 100, 9)
-    r.bar:SetPoint("BOTTOMRIGHT", -10, 7)
-    r.bar.text = r.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    r.bar.text:SetPoint("RIGHT", r.bar, "LEFT", -6, 0)
-
-    r:SetScript("OnEnter", ShowTooltip)
+    r.text = Label(r, st.size, st.color, st.font)
+    r.head = Label(r, 18, C.inkHead, MORPHEUS)
+    r.sub = Label(r, st.sub, st.subColor, st.font)
+    r.right = Label(r, st.rightSize, st.color, st.right)
+    r.right:SetJustifyH("RIGHT")
+    if st == STYLES.wall then
+        Shadow(r.text)
+        Shadow(r.rank)
+    end
+    r.bar = GoldBar(r, 200, 7)
+    r.barText = Label(r, 13, st.subColor, NARROW)
+    r.btn = RedButton(r, "", 100, 20)
+    r:SetScript("OnEnter", RowEnter)
     r:SetScript("OnLeave", HideTooltip)
-    achRows[i] = r
+    list.rows[i] = r
     return r
 end
 
-local function FillAchRow(r, d, snapshot)
-    r.def = d
-    local earnedTs = ns.char.earned[d.id]
-    local hidden = d.hidden and not earnedTs
-    local shame = d.cat == "Shame"
-    r.icon:SetTexture(hidden and QUESTION or d.icon or QUESTION)
-    r.icon:SetDesaturated(not earnedTs)
-    r.name:SetText(hidden and "???" or d.name)
-    local desc = hidden and (GREY .. (d.hint or "Hidden achievement.") .. "|r") or (d.desc or "")
-    if d.type == "custom" and ns.IsOfficer(ns.me) then desc = desc .. "  " .. BLUE .. "(" .. d.id .. ")|r" end
-    r.desc:SetText(desc)
-    r.points:SetText(tostring(d.points or 0))
+local function Begin(list)
+    list.n, list.y = 0, 0
+end
 
-    if earnedTs then
-        Tint(r, shame and T_SHAME or T_EARNED, shame and C_SHAME or C_GOLD)
-        local c = shame and C_SHAME or C_GOLD
-        r.iconBorder:SetColorTexture(c[1], c[2], c[3], 1)
-        r.name:SetTextColor(1, 0.85, 0.3)
-        r.status:SetText(GREEN .. "Earned|r " .. date("%Y-%m-%d", earnedTs))
-        r.status:Show()
-        r.bar:Hide()
-        r.coin:SetDesaturated(false)
-        r:SetAlpha(1)
+-- Add a row. o: x, w, h, gap, band (a section heading), head (a Morpheus
+-- heading), rank, dot, icon, iconSize, rim (color), desat, text, sub,
+-- bar = { value, max }, barW, barText, right, rightW, btn, onClick,
+-- disabled, def (achievement tooltip), tip, noLine
+local function Add(list, o)
+    list.n = list.n + 1
+    local r = list.rows[list.n] or NewRow(list, list.n)
+    local h = o.h or list.rowH
+    local w = o.w or (list.w - (o.x or 0))
+    r:ClearAllPoints()
+    r:SetPoint("TOPLEFT", o.x or 0, -list.y)
+    r:SetSize(w, h)
+    list.y = list.y + h + (o.gap or 0)
+    r.def, r.tip = o.def, o.tip
+    r.band:SetShown(o.band == true)
+    r.line:SetShown(not o.noLine and not o.band and not o.head)
+
+    local x = 6
+    if o.rank then
+        r.rank:SetText(o.rank)
+        r.rank:ClearAllPoints()
+        r.rank:SetPoint("LEFT", 0, 0)
+        r.rank:Show()
+        x = 38
     else
-        Tint(r, T_ROW, { 0.2, 0.13, 0.07 })
-        r.iconBorder:SetColorTexture(0.15, 0.1, 0.06, 1)
-        r.name:SetTextColor(0.8, 0.78, 0.72)
-        r.coin:SetDesaturated(true)
-        local _, cur, target = ns.Progress(d, snapshot)
-        if cur and target and target > 0 and not hidden then
-            local shown = math.min(cur, target)
-            r.bar:SetMinMaxValues(0, target)
-            r.bar:SetValue(shown)
-            r.bar.text:SetText(Commas(shown) .. " / " .. Commas(target))
-            r.bar:Show()
-            r.status:Hide()
-        else
-            local hint = (d.type == "custom" and "Granted by officers") or (hidden and "Hidden")
-                         or (d.type == "boss" and "Go kill it") or ""
-            r.status:SetText(GREY .. hint .. "|r")
-            r.status:Show()
-            r.bar:Hide()
-        end
-        r:SetAlpha(0.9)
+        r.rank:Hide()
+    end
+    if o.dot then
+        r.dot:SetTexture(o.dot)
+        r.dot:ClearAllPoints()
+        r.dot:SetPoint("LEFT", x, 0)
+        r.dot:Show()
+        x = x + 20
+    else
+        r.dot:Hide()
+    end
+    if o.icon then
+        local size = o.iconSize or math.min(h - 10, 34)
+        local c = o.rim or C.rim
+        r.rim:SetSize(size + 4, size + 4)
+        r.rim:ClearAllPoints()
+        r.rim:SetPoint("LEFT", x, 0)
+        r.rim:SetColorTexture(c[1], c[2], c[3], 1)
+        r.icon:SetSize(size, size)
+        r.icon:ClearAllPoints()
+        r.icon:SetPoint("CENTER", r.rim, "CENTER")
+        r.icon:SetTexture(o.icon)
+        r.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+        r.icon:SetDesaturated(o.desat and true or false)
+        r.icon:SetAlpha(o.desat and 0.75 or 1)
+        r.rim:Show()
+        r.icon:Show()
+        x = x + size + 14
+    else
+        r.rim:Hide()
+        r.icon:Hide()
+    end
+
+    -- Right side: a button, and a value left of it
+    local rx = 6
+    if o.btn then
+        r.btn:SetText(o.btn)
+        r.btn.onClick = o.onClick
+        if o.disabled then r.btn:Disable() else r.btn:Enable() end
+        r.btn:ClearAllPoints()
+        r.btn:SetPoint("RIGHT", -6, 0)
+        r.btn:Show()
+        rx = rx + 106
+    else
+        r.btn:Hide()
+    end
+    r.right:SetText(o.right or "")
+    r.right:ClearAllPoints()
+    r.right:SetPoint("RIGHT", -rx, 0)
+    local rightW = o.right and (o.rightW or 80) or 0
+    local textW = math.max(40, w - x - rx - rightW - 8)
+
+    -- One line, or two (a second line of text, or a progress bar)
+    local two = o.sub or o.bar
+    r.text:ClearAllPoints()
+    r.text:SetWidth(textW)
+    r.head:Hide()
+    if o.head then
+        r.head:SetText(o.head)
+        r.head:ClearAllPoints()
+        r.head:SetPoint("LEFT", x, 0)
+        r.head:SetWidth(textW)
+        r.head:Show()
+        r.text:SetText("")
+    elseif two then
+        r.text:SetPoint("TOPLEFT", x, -(h / 2 - 14))
+    else
+        r.text:SetPoint("LEFT", x, 0)
+    end
+    if not o.head then r.text:SetText(o.text or "") end
+    if o.sub then
+        r.sub:SetText(o.sub)
+        r.sub:ClearAllPoints()
+        r.sub:SetPoint("TOPLEFT", x, -(h / 2 + 2))
+        r.sub:SetWidth(textW)
+        r.sub:Show()
+    else
+        r.sub:Hide()
+    end
+    if o.bar then
+        local max = math.max(1, o.bar[2] or 1)
+        r.bar:SetMinMaxValues(0, max)
+        r.bar:SetValue(math.min(max, o.bar[1] or 0))
+        r.bar:SetWidth(o.barW or 200)
+        r.bar:ClearAllPoints()
+        r.bar:SetPoint("TOPLEFT", x, -(h / 2 + 5))
+        r.bar:Show()
+        r.barText:SetText(o.barText or "")
+        r.barText:ClearAllPoints()
+        r.barText:SetPoint("LEFT", r.bar, "RIGHT", 8, 0)
+        r.barText:Show()
+    else
+        r.bar:Hide()
+        r.barText:Hide()
     end
     r:Show()
+    return r
 end
 
-local function GetLine(i)
-    local l = lineRows[i]
-    if l then return l end
-    l = CreateFrame("Frame", nil, content)
-    l:SetSize(LIST_W, LINE_H)
-    l:SetPoint("TOPLEFT", 0, -((i - 1) * LINE_H))
-    l.bar = l:CreateTexture(nil, "BACKGROUND")
-    l.rank = l:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    l.rank:SetPoint("LEFT", 0, 0)
-    l.rank:SetWidth(34)
-    l.rank:SetJustifyH("RIGHT")
-    l.icon = l:CreateTexture(nil, "ARTWORK")
-    l.icon:SetSize(18, 18)
-    l.text = l:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    l.text:SetJustifyH("LEFT")
-    l.text:SetWordWrap(false)
-    l.right = l:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    l.right:SetPoint("RIGHT", -8, 0)
-    l.right:SetJustifyH("RIGHT")
-    l.btn = CreateFrame("Button", nil, l, "UIPanelButtonTemplate")
-    l.btn:SetSize(96, 20)
-    l.btn:SetPoint("RIGHT", -6, 0)
-    l.btn:SetScript("OnClick", function(self) if self.onClick then self.onClick() end end)
-    l.btn:Hide()
-    lineRows[i] = l
-    return l
+local function Finish(list)
+    for i = list.n + 1, #list.rows do list.rows[i]:Hide() end
+    if list.scroll ~= list.content then
+        list.content:SetHeight(math.max(1, list.y))
+        -- The scroll bar only when there's something to scroll
+        local bar = list.scroll.ScrollBar
+        if bar and bar.SetShown then bar:SetShown(list.y > list.h + 2) end
+    end
 end
 
--- o: rank, icon, text, right, rightW, barFrac (0..1), barColor
-local function SetLine(l, o)
-    l.rank:SetText(o.rank or "")
-    local x = o.rank and 42 or 4
-    l.icon:ClearAllPoints()
-    l.icon:SetPoint("LEFT", x, 0)
+local function ScrollTop(room)
+    for _, list in ipairs(room.lists) do
+        if list.scroll ~= list.content then list.scroll:SetVerticalScroll(0) end
+    end
+end
+
+-- A sidebar of picks (categories, boards, professions)
+local Render -- forward
+
+local function SideList(room, parent, x, y, w, h, spacing)
+    local side = { room = room, parent = parent, x = x, y = y, w = w, h = h, spacing = spacing or 2, buttons = {} }
+    room.side = side
+    return side
+end
+
+-- o: label, count, on, icon, frac (a thin progress line), color, onClick
+local function SideItem(side, i, o)
+    local b = side.buttons[i]
+    if not b then
+        b = Chip(side.parent, side.w, side.h)
+        b:SetPoint("TOPLEFT", side.x, side.y - (i - 1) * (side.h + side.spacing))
+        b.icon = b:CreateTexture(nil, "ARTWORK")
+        b.icon:SetSize(side.h - 10, side.h - 10)
+        b.icon:SetPoint("LEFT", 5, 0)
+        b.mini = GoldBar(b, side.w - 16, 3)
+        b.mini:SetPoint("BOTTOMLEFT", 8, 4)
+        side.buttons[i] = b
+    end
+    SetChip(b, o.label, o.count, o.on, o.color)
+    b.label:ClearAllPoints()
     if o.icon then
-        l.icon:SetTexture(o.icon)
-        l.icon:Show()
-        x = x + 24
+        b.icon:SetTexture(o.icon)
+        b.icon:Show()
+        b.label:SetPoint("LEFT", side.h - 1, o.frac and 2 or 0)
     else
-        l.icon:Hide()
+        b.icon:Hide()
+        b.label:SetPoint("LEFT", 10, o.frac and 2 or 0)
     end
-    l.text:ClearAllPoints()
-    l.text:SetPoint("LEFT", x, 0)
-    l.text:SetPoint("RIGHT", -(o.rightW or 110), 0)
-    l.text:SetText(o.text or "")
-    l.right:SetText(o.right or "")
-    l.right:ClearAllPoints()
-    if o.button then
-        l.btn:SetText(o.button)
-        l.btn.onClick = o.onClick
-        if o.disabled then l.btn:Disable() else l.btn:Enable() end
-        l.btn:Show()
-        l.right:SetPoint("RIGHT", l.btn, "LEFT", -8, 0)
+    b.count:ClearAllPoints()
+    b.count:SetPoint("RIGHT", -8, o.frac and 2 or 0)
+    if o.frac then
+        b.mini:SetValue(o.frac)
+        b.mini:Show()
     else
-        l.btn:Hide()
-        l.right:SetPoint("RIGHT", -8, 0)
-    end
-    if o.barFrac and o.barFrac > 0 then
-        local c = o.barColor or { 0.95, 0.95, 0.88 } -- chalk
-        l.bar:ClearAllPoints()
-        l.bar:SetPoint("TOPLEFT", x - 4, -3)
-        l.bar:SetPoint("BOTTOMLEFT", x - 4, 3)
-        l.bar:SetWidth(math.max(2, (LIST_W - x - 8) * o.barFrac))
-        l.bar:SetColorTexture(c[1], c[2], c[3], 0.14)
-        l.bar:Show()
-    else
-        l.bar:Hide()
-    end
-    l:Show()
-end
-
-local function GetSide(i)
-    local b = sideButtons[i]
-    if b then return b end
-    b = CreateFrame("Button", nil, f.side)
-    b:SetSize(SIDE_W - 16, SIDE_H - 3)
-    b:SetPoint("TOPLEFT", 8, -8 - (i - 1) * SIDE_H)
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints()
-    b.bg:SetTexture(MEDIA .. "Plank")
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints()
-    b.hl:SetColorTexture(1, 0.82, 0, 0.12)
-    b.sel = b:CreateTexture(nil, "ARTWORK")
-    b.sel:SetPoint("TOPLEFT")
-    b.sel:SetPoint("BOTTOMLEFT")
-    b.sel:SetWidth(3)
-    b.sel:SetColorTexture(1, 0.82, 0, 1)
-    b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetSize(16, 16)
-    b.icon:SetPoint("LEFT", 8, 0)
-    b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.label:SetPoint("LEFT", 30, 0)
-    b.label:SetJustifyH("LEFT")
-    b.label:SetShadowColor(0, 0, 0, 1)
-    b.label:SetShadowOffset(1, -1)
-    b.count = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    b.count:SetPoint("RIGHT", -6, 0)
-    b.count:SetTextColor(0.75, 0.7, 0.6)
-    b:SetScript("OnClick", function(self)
-        if self.onClick then self.onClick() end
-    end)
-    sideButtons[i] = b
-    return b
-end
-
-local function SetSide(i, icon, label, count, selected, onClick)
-    local b = GetSide(i)
-    b.icon:SetTexture(icon)
-    b.label:SetText(label)
-    b.count:SetText(count or "")
-    b.sel:SetShown(selected)
-    if selected then
-        b.bg:SetVertexColor(1, 0.9, 0.75)
-        b.label:SetTextColor(1, 0.85, 0.3)
-    else
-        b.bg:SetVertexColor(0.5, 0.45, 0.4)
-        b.label:SetTextColor(0.92, 0.9, 0.85)
+        b.mini:Hide()
     end
     b.onClick = function()
-        onClick()
-        scroll:SetVerticalScroll(0)
+        o.onClick()
+        ScrollTop(side.room)
         Render()
     end
     b:Show()
 end
 
-local function HideAll()
-    for _, r in ipairs(achRows) do r:Hide() end
-    for _, l in ipairs(lineRows) do l:Hide() end
-    for _, b in ipairs(sideButtons) do b:Hide() end
+local function SideBegin(side) for _, b in ipairs(side.buttons) do b:Hide() end end
+
+-- ---------------------------------------------------------------------------
+-- State
+-- ---------------------------------------------------------------------------
+
+local f, panel
+local rooms, tabs = {}, {}
+local view = "home"
+local category, plaqueFilter, plaqueSearch = "All", "all", ""
+local board, feedFilter = "points", "all"
+local workshopProf, workshopWho, searchText = nil, nil, ""
+local houseRule
+
+local function Room(key)
+    local frame = CreateFrame("Frame", nil, panel)
+    frame:SetPoint("TOPLEFT", PAD, -BODY_TOP)
+    frame:SetSize(BODY_W, BODY_H)
+    frame:Hide()
+    local room = { key = key, frame = frame, lists = {} }
+    rooms[key] = room
+    return room
 end
 
-local function SetHeader(title, sub)
-    f.listTitle:SetText(title)
-    f.listSub:SetText(sub or "")
+local function Go(key)
+    view = key
+    if key ~= "ach" then ns.RequestRoster() end
+    if rooms[key] then ScrollTop(rooms[key]) end
+    Render()
+end
+
+local function NewHouseRule()
+    houseRule = string.format(TAGLINES[math.random(#TAGLINES)], InnRef())
 end
 
 -- ---------------------------------------------------------------------------
--- Views
+-- Feed text (shared by the Common Room and the Gossip board)
 -- ---------------------------------------------------------------------------
 
-local function RenderAchievements()
+local function FeedKind(e) return e.kind or "ach" end
+
+-- ink: for the parchment notes (dark names instead of class colors)
+local function FeedText(e, ink)
+    local kind = FeedKind(e)
+    local hl = ink and INK_LINK or GOLD
+    if kind == "death" then
+        local whos = e.whos or {}
+        local zone = hl .. ((e.zone and e.zone ~= "") and e.zone or "the wilderness") .. "|r"
+        if #whos <= 1 then return Pick(OBITS, e.ts)(Who(whos[1], ink), zone, e.n or 0) end
+        return Pick(MASS, e.ts)(zone, NameList(whos, 3, ink))
+    elseif kind == "duel" then
+        return Pick(e.fled and FLED or DUELS, e.ts)(Who(e.who, ink), Who(e.loser, ink))
+    elseif kind == "chess" then
+        local a, b, moves = Who(e.who, ink), Who(e.loser, ink), math.floor(((e.plies or 0) + 1) / 2)
+        if e.how == "checkmate" then return string.format("%s checkmated %s in %d moves.", a, b, moves) end
+        if e.how == "resign" then return string.format("%s tipped their king to %s.", b, a) end
+        if e.how == "stalemate" then return string.format("%s and %s stalemated. Nobody wins, everybody's tired.", a, b) end
+        return string.format("%s and %s called it a draw at the chess board.", a, b)
+    end
+    local d = ns.byId[e.id]
+    local shame = d and d.cat == "Shame"
+    local dim = ink and INK_DIM or MUTED
+    local label = d and ((shame and (ink and INK_SHAME or SHAME) or hl) .. "[" .. d.name .. "]|r") or (dim .. "[removed]|r")
+    local first = e.first and ("  " .. hl .. "GUILD FIRST!|r") or ""
+    if shame then return Pick(SHAME_EARNED, e.ts)(Who(e.who, ink), label) .. first end
+    return Who(e.who, ink) .. " earned " .. label .. (d and (dim .. "  +" .. (d.points or 0) .. "|r") or "") .. first
+end
+
+local function FeedIcon(e)
+    local kind = FeedKind(e)
+    if kind == "death" then return SKULL end
+    if kind == "duel" then return ICONS .. (e.fled and "Ability_Rogue_Sprint" or "Ability_Warrior_Challange") end
+    if kind == "chess" then return MEDIA .. "ChessWK" end
+    local d = ns.byId[e.id]
+    return d and d.icon or QUESTION
+end
+
+-- Feed entries that are shown (obituaries can be switched off)
+local function VisibleFeed()
+    local g = ns.Guild()
+    local out = {}
+    for _, e in ipairs(g and g.feed or {}) do
+        if FeedKind(e) ~= "death" or ns.settings.obituaries then out[#out + 1] = e end
+    end
+    return out
+end
+
+-- Unearned, visible achievements with some progress, closest first
+local function WithinReach(snapshot, filterCat)
+    local list = {}
+    for _, d in ipairs(ns.defs) do
+        if not ns.char.earned[d.id] and not d.hidden and (not filterCat or filterCat == "All" or d.cat == filterCat) then
+            local _, cur, target = ns.Progress(d, snapshot)
+            if cur and target and target > 0 and cur > 0 then
+                list[#list + 1] = { d = d, cur = math.min(cur, target), target = target, frac = math.min(1, cur / target) }
+            end
+        end
+    end
+    table.sort(list, function(a, b)
+        if a.frac ~= b.frac then return a.frac > b.frac end
+        return (a.d.points or 0) > (b.d.points or 0)
+    end)
+    return list
+end
+
+-- ---------------------------------------------------------------------------
+-- Common Room
+-- ---------------------------------------------------------------------------
+
+local HOME_LEFT = 505
+local HOME_RIGHT = BODY_W - HOME_LEFT - GAP
+local HEARTH_H, BAR_H = 196, 268
+
+local function BuildHome(room)
+    local fr = room.frame
+
+    local hearth = Well(fr)
+    hearth:SetPoint("TOPLEFT")
+    hearth:SetSize(HOME_LEFT, HEARTH_H)
+    local fire = hearth:CreateTexture(nil, "ARTWORK")
+    fire:SetSize(18, 18)
+    fire:SetPoint("TOPLEFT", 12, -11)
+    fire:SetTexture(ICONS .. "Spell_Fire_Fire")
+    Heading(hearth, "By the hearth"):SetPoint("LEFT", fire, "RIGHT", 7, 0)
+    local hs = Label(hearth, 11, C.muted)
+    hs:SetPoint("TOPRIGHT", -12, -15)
+    hs:SetJustifyH("RIGHT")
+    hs:SetText("Plaques you could hang tonight")
+    room.hearth = List(room, hearth, HOME_LEFT - 16, HEARTH_H - 44, 50)
+    room.hearth.scroll:SetPoint("TOPLEFT", 8, -38)
+
+    local news = Well(fr)
+    news:SetPoint("TOPLEFT", 0, -(HEARTH_H + GAP))
+    news:SetSize(HOME_LEFT, BODY_H - HEARTH_H - GAP)
+    Heading(news, "Last night at the inn"):SetPoint("TOPLEFT", 12, -12)
+    RedButton(news, "All gossip", 96, 20, function() Go("feed") end):SetPoint("TOPRIGHT", -10, -8)
+    room.news = List(room, news, HOME_LEFT - 16, BODY_H - HEARTH_H - GAP - 44, 26)
+    room.news.scroll:SetPoint("TOPLEFT", 8, -38)
+
+    local bar = Well(fr)
+    bar:SetPoint("TOPLEFT", HOME_LEFT + GAP, 0)
+    bar:SetSize(HOME_RIGHT, BAR_H)
+    Heading(bar, "Guildies at the bar"):SetPoint("TOPLEFT", 12, -12)
+    room.barCount = Label(bar, 11, C.muted)
+    room.barCount:SetPoint("TOPRIGHT", -12, -15)
+    room.barCount:SetJustifyH("RIGHT")
+    room.bar = List(room, bar, HOME_RIGHT - 16, BAR_H - 44, 24)
+    room.bar.scroll:SetPoint("TOPLEFT", 8, -38)
+
+    -- The notice board: a note pinned to the wall
+    local note = CreateFrame("Frame", nil, fr)
+    note:SetPoint("TOPLEFT", HOME_LEFT + GAP, -(BAR_H + GAP))
+    note:SetSize(HOME_RIGHT, BODY_H - BAR_H - GAP)
+    local paper = note:CreateTexture(nil, "BACKGROUND")
+    paper:SetAllPoints()
+    paper:SetTexture(MEDIA .. "Parchment")
+    local pin = note:CreateTexture(nil, "ARTWORK")
+    pin:SetSize(14, 14)
+    pin:SetPoint("TOP", 0, -5)
+    pin:SetTexture(MEDIA .. "ChessDot")
+    pin:SetVertexColor(0.55, 0.1, 0.06)
+    local nh = Label(note, 18, C.inkHead, MORPHEUS)
+    nh:SetPoint("TOPLEFT", 16, -20)
+    nh:SetText("On the notice board")
+    room.notice = List(room, note, HOME_RIGHT - 28, 96, 32, "ink")
+    room.notice.scroll:SetPoint("TOPLEFT", 14, -44)
+    room.rule = Label(note, 11, C.inkDim)
+    room.rule:SetPoint("BOTTOMLEFT", 16, 16)
+    room.rule:SetWidth(HOME_RIGHT - 32)
+    room.rule:SetWordWrap(true)
+end
+
+local function RenderHome(room)
+    local snapshot = ns.Snapshot()
+    local g = ns.Guild()
+
+    -- By the hearth: the closest unearned plaques
+    local L = room.hearth
+    Begin(L)
+    local near = WithinReach(snapshot)
+    for i = 1, math.min(3, #near) do
+        local it = near[i]
+        Add(L, { h = 50, icon = it.d.icon or QUESTION, def = it.d,
+                 text = GOLD .. it.d.name .. "|r  " .. MUTED .. (it.d.desc or "") .. "|r",
+                 bar = { it.cur, it.target }, barW = 250, barText = Commas(it.cur) .. " / " .. Commas(it.target),
+                 right = GOLD .. "+" .. (it.d.points or 0) .. "|r", rightW = 34 })
+    end
+    if #near == 0 then
+        Add(L, { text = MUTED .. "Nothing within reach. Go do something heroic. Or stupid.|r", noLine = true })
+    end
+    Finish(L)
+
+    -- Last night at the inn
+    L = room.news
+    Begin(L)
+    local feed = VisibleFeed()
+    for i = 1, math.min(9, #feed) do
+        local e = feed[i]
+        Add(L, { icon = FeedIcon(e), iconSize = 16, text = FeedText(e), right = MUTED .. Ago(e.ts) .. "|r", rightW = 64 })
+    end
+    if #feed == 0 then
+        Add(L, { text = MUTED .. "Quiet night. Nobody's done anything worth gossiping about. Yet.|r", noLine = true })
+    end
+    Finish(L)
+
+    -- Guildies at the bar: everyone with the addon, online first
+    L = room.bar
+    Begin(L)
+    local people, onlineOthers, others = {}, 0, 0
+    if g then
+        for name, m in pairs(g.members) do
+            if name == ns.me or not ns.rosterReady or ns.RosterEntry(name) then
+                local online = IsOnline(name)
+                if name ~= ns.me then
+                    others = others + 1
+                    if online then onlineOthers = onlineOthers + 1 end
+                end
+                people[#people + 1] = { name = name, online = online, points = (ns.PointsFor(m.earned)), m = m }
+            end
+        end
+    end
+    table.sort(people, function(a, b)
+        if a.online ~= b.online then return a.online end
+        if a.points ~= b.points then return a.points > b.points end
+        return a.name < b.name
+    end)
+    if not g then
+        room.barCount:SetText("")
+        Add(L, { text = MUTED .. "You're not in a guild. Drinking alone, then.|r", noLine = true })
+    elseif others == 0 then
+        room.barCount:SetText("Only you")
+        Add(L, { text = CREAM .. "Just you and the barkeep tonight.|r", noLine = true })
+        Add(L, { text = MUTED .. "Chairs fill up as guildies install the addon.|r", noLine = true })
+    else
+        room.barCount:SetText(onlineOthers == 0 and "Nobody else in tonight"
+                              or (onlineOthers .. " other" .. (onlineOthers == 1 and "" or "s") .. " in tonight"))
+        local shown = math.min(#people, 8)
+        for i = 1, shown do
+            local p = people[i]
+            local where
+            if p.name == ns.me then where = "you"
+            elseif p.online then
+                local e = ns.RosterEntry(p.name)
+                where = e and e.zone or ""
+            else
+                where = (p.m.lastSeen or 0) > 0 and ("seen " .. Ago(p.m.lastSeen)) or "away"
+            end
+            Add(L, { dot = p.online and ONLINE or OFFLINE, text = ClassColored(p.name) .. "  " .. MUTED .. where .. "|r",
+                     right = GOLD .. Commas(p.points) .. "|r", rightW = 48 })
+        end
+        if #people > shown then
+            Add(L, { text = MUTED .. "+" .. (#people - shown) .. " more on the Scoreboard|r", noLine = true })
+        end
+    end
+    Finish(L)
+
+    -- The notice board: chess first, then the house rule
+    L = room.notice
+    Begin(L)
+    local G = ns.ChessGame
+    local inv, pend, game = G.Invite(), G.Pending(), G.Current()
+    if inv then
+        Add(L, { text = Who(inv.from, true) .. " challenges you to chess", btn = "Accept",
+                 onClick = function() G.Accept() Render() end })
+    end
+    if pend then Add(L, { text = "Waiting for " .. Who(pend.to, true) .. " to answer..." }) end
+    if game and not game.over then
+        local opp = game.mode == "guild" and Who(game.opp, true) or (game.mode == "barkeep" and "the barkeep" or "yourself")
+        Add(L, { text = "Chess vs " .. opp .. (G.MyTurn() and (": " .. "|cff1c6b1cyour move|r") or ""),
+                 btn = "Open board", onClick = function() ns.ChessUI.Open() end })
+    elseif not inv and not pend then
+        Add(L, { text = "No chess on the go.", btn = "Play the barkeep", onClick = function() G.Practice("barkeep") end })
+    end
+    Finish(L)
+    if not houseRule then NewHouseRule() end
+    room.rule:SetText(houseRule)
+end
+
+-- ---------------------------------------------------------------------------
+-- Trophy Wall
+-- ---------------------------------------------------------------------------
+
+local PLAQUE_FILTERS = { { "all", "All" }, { "earned", "Earned" }, { "notyet", "Not yet" }, { "near", "Within reach" } }
+
+local function BuildTrophies(room)
+    local fr = room.frame
+    local side = Well(fr)
+    side:SetPoint("TOPLEFT")
+    side:SetSize(SIDE_W, BODY_H)
+    SideList(room, side, 6, -6, SIDE_W - 12, 32, 2)
+
+    local mx, mw = SIDE_W + GAP, BODY_W - SIDE_W - GAP
+    room.search = SearchBox(fr, "TheInnPlaqueSearch", "Search plaques", 190)
+    room.search:SetPoint("TOPLEFT", mx + 6, -4)
+    room.search.onChange = function(text)
+        plaqueSearch = text
+        ScrollTop(room)
+        Render()
+    end
+    room.chips = {}
+    for i, fdef in ipairs(PLAQUE_FILTERS) do
+        local c = Chip(fr, 100, 24)
+        c:SetPoint("TOPLEFT", mx + 210 + (i - 1) * 106, -2)
+        c.onClick = function()
+            plaqueFilter = fdef[1]
+            ScrollTop(room)
+            Render()
+        end
+        room.chips[i] = c
+    end
+    local well = Well(fr)
+    well:SetPoint("TOPLEFT", mx, -34)
+    well:SetSize(mw, BODY_H - 34 - 22)
+    room.list = List(room, well, mw - 10, BODY_H - 34 - 22 - 8, 48, "wall", true)
+    room.list.scroll:SetPoint("TOPLEFT", 6, -4)
+    room.footer = Label(fr, 11, C.muted)
+    room.footer:SetPoint("BOTTOMLEFT", mx + 2, 3)
+    room.footer:SetWidth(mw)
+end
+
+local function AddPlaque(L, d, cur, target)
+    local ts = ns.char.earned[d.id]
+    local hidden = d.hidden and not ts
+    local shame = d.cat == "Shame"
+    local name = hidden and "???" or d.name
+    local desc = hidden and (d.hint or "Hidden achievement.") or (d.desc or "")
+    if d.type == "custom" and ns.IsOfficer(ns.me) then desc = desc .. "  " .. BLUE .. "(" .. d.id .. ")|r" end
+    local o = { h = 48, icon = hidden and QUESTION or d.icon or QUESTION, def = d }
+    if ts then
+        o.rim = shame and C.shame or C.brass
+        o.text = (shame and SHAME or GOLD) .. name .. "|r"
+        o.sub = MUTED .. desc .. "|r"
+        o.right = GREEN .. When(ts) .. "|r    " .. GOLD .. (d.points or 0) .. "|r"
+        o.rightW = 110
+    else
+        o.rim, o.desat = C.dull, true
+        o.right = MUTED .. (d.points or 0) .. "|r"
+        o.rightW = 30
+        if cur and target and target > 0 and not hidden then
+            o.text = "|cffe8dcc0" .. name .. "|r  " .. MUTED .. desc .. "|r"
+            o.bar, o.barW = { math.min(cur, target), target }, 220
+            o.barText = Commas(math.min(cur, target)) .. " / " .. Commas(target)
+        else
+            o.text = "|cffcfc2a6" .. name .. "|r"
+            local how = (d.type == "custom" and "Granted by officers") or (d.type == "boss" and "Go kill it") or nil
+            o.sub = MUTED .. desc .. (how and ("  " .. GREY .. "(" .. how .. ")|r") or "") .. "|r"
+        end
+    end
+    Add(L, o)
+end
+
+local function RenderTrophies(room)
     local snapshot = ns.Snapshot()
     local cats = { "All" }
     for _, c in ipairs(ns.CATEGORIES) do cats[#cats + 1] = c end
+    SideBegin(room.side)
     for i, c in ipairs(cats) do
         local total, got = 0, 0
         for _, d in ipairs(ns.defs) do
@@ -574,42 +1096,139 @@ local function RenderAchievements()
                 if ns.char.earned[d.id] then got = got + 1 end
             end
         end
-        SetSide(i, (CAT_INFO[c] or CAT_INFO.All).icon, c, got .. "/" .. total, c == category,
-                function() category = c end)
+        SideItem(room.side, i, { label = c, count = got .. " / " .. total, on = c == category,
+                                 frac = total > 0 and got / total or 0, color = c == "Shame" and { 1, 0.54, 0.36 } or nil,
+                                 onClick = function() category = c end })
     end
+    for i, fdef in ipairs(PLAQUE_FILTERS) do SetChip(room.chips[i], fdef[2], nil, plaqueFilter == fdef[1]) end
 
-    local list = {}
+    -- Sort the plaques into within reach, earned and the rest
+    local q = plaqueSearch:lower()
+    local near, earned, rest = {}, {}, {}
     for _, d in ipairs(ns.defs) do
-        if category == "All" or d.cat == category then list[#list + 1] = d end
+        if category == "All" or d.cat == category then
+            local ts = ns.char.earned[d.id]
+            local hidden = d.hidden and not ts
+            local match = q == "" or (not hidden and ((d.name or ""):lower():find(q, 1, true)
+                                                      or (d.desc or ""):lower():find(q, 1, true)))
+            if match then
+                if ts then
+                    earned[#earned + 1] = d
+                else
+                    local _, cur, target = ns.Progress(d, snapshot)
+                    if not hidden and cur and target and target > 0 and cur > 0 then
+                        near[#near + 1] = { d = d, cur = cur, target = target, frac = math.min(1, cur / target) }
+                    else
+                        rest[#rest + 1] = { d = d, hidden = hidden and true or false }
+                    end
+                end
+            end
+        end
     end
-    -- Earned first (newest first), then whatever you're closest to, hidden ones last
-    local order, frac = {}, {}
-    for i, d in ipairs(list) do
-        order[d] = i
-        local _, cur, target = ns.Progress(d, snapshot)
-        frac[d] = (cur and target and target > 0) and math.min(1, cur / target) or 0
-        if d.hidden then frac[d] = -1 end
-    end
-    table.sort(list, function(a, b)
-        local ea, eb = ns.char.earned[a.id], ns.char.earned[b.id]
-        if (ea ~= nil) ~= (eb ~= nil) then return ea ~= nil end
-        if ea and eb and ea ~= eb then return ea > eb end
-        if not ea and frac[a] ~= frac[b] then return frac[a] > frac[b] end
-        return order[a] < order[b]
+    table.sort(near, function(a, b)
+        if a.frac ~= b.frac then return a.frac > b.frac end
+        return (a.d.points or 0) > (b.d.points or 0)
+    end)
+    table.sort(earned, function(a, b)
+        local ta, tb = ns.char.earned[a.id], ns.char.earned[b.id]
+        if ta ~= tb then return ta > tb end
+        return a.id < b.id
+    end)
+    local order = {}
+    for i, d in ipairs(ns.defs) do order[d] = i end
+    table.sort(rest, function(a, b)
+        if a.hidden ~= b.hidden then return not a.hidden end
+        return order[a.d] < order[b.d]
     end)
 
-    local got = 0
-    for i, d in ipairs(list) do
-        FillAchRow(GetAchRow(i), d, snapshot)
-        if ns.char.earned[d.id] then got = got + 1 end
+    local L = room.list
+    Begin(L)
+    local function Section(title, sub)
+        Add(L, { band = true, h = 26, text = GOLD .. title .. "|r   " .. MUTED .. sub .. "|r" })
     end
-    content:SetHeight(math.max(1, #list * ROW_H))
-    if #list == 0 then
-        SetLine(GetLine(1), { text = GREY .. "Nothing on this wall yet. Officers haven't invented any.|r" })
-        SetLine(GetLine(2), { text = GREY .. "Officers: /inn create 10 Name | description|r" })
-        content:SetHeight(2 * LINE_H)
+    local f2 = plaqueFilter
+    if (f2 == "all" or f2 == "near" or f2 == "notyet") and #near > 0 then
+        Section("Within reach", "closest first")
+        for _, it in ipairs(near) do AddPlaque(L, it.d, it.cur, it.target) end
     end
-    SetHeader(category .. "  " .. GREY .. got .. " / " .. #list .. "|r", (CAT_INFO[category] or CAT_INFO.All).quip)
+    if (f2 == "all" or f2 == "earned") and #earned > 0 then
+        Section("Earned", "newest first")
+        for _, d in ipairs(earned) do AddPlaque(L, d) end
+    end
+    if (f2 == "all" or f2 == "notyet") and #rest > 0 then
+        Section("Not yet", "the long road")
+        for _, it in ipairs(rest) do AddPlaque(L, it.d) end
+    end
+    if L.n == 0 then
+        local text
+        if q ~= "" then text = "No plaque by that name. The engraver is confused."
+        elseif category == "Guild" and f2 == "all" then text = "Nothing on this wall yet. Officers: /inn create 10 Name | description"
+        elseif f2 == "earned" then text = "Nothing earned here yet. The wall is patient."
+        else text = "Nothing here." end
+        Add(L, { text = MUTED .. text .. "|r", noLine = true })
+    end
+    Finish(L)
+    local info = CAT_INFO[category] or CAT_INFO.All
+    room.footer:SetText(info.quip .. "   " .. GREY .. "Hover a plaque to see which guildies have it.|r")
+end
+
+-- ---------------------------------------------------------------------------
+-- Scoreboard
+-- ---------------------------------------------------------------------------
+
+local PICK_W = 170
+local TALLY = {
+    { "points", function(s) return Commas((ns.PointsFor(ns.char.earned))) end },
+    { "deaths", function(s) return Commas(s.deaths) end },
+    { "jumps", function(s) return Commas(s.jumps) end },
+    { "honorable kills", function(s) return Commas(s.hk) end },
+    { "killing blows", function(s) return Commas(s.killingBlows) end },
+    { "chess rating", function(s) return tostring(s.chessElo or ns.CHESS_START_ELO) end },
+    { "duels won", function(s) return Commas(s.duelsWon) end },
+    { "times fled", function(s) return Commas(s.duelsFled) end },
+}
+
+local function BuildBoards(room)
+    local fr = room.frame
+    local rb = Shadow(Label(fr, 11, C.muted))
+    rb:SetPoint("TOPLEFT", 4, -2)
+    rb:SetText("RANK BY")
+    SideList(room, fr, 0, -20, PICK_W, 30, 4)
+
+    local bx = PICK_W + GAP
+    local bw = BODY_W - bx
+    local slate = CreateFrame("Frame", nil, fr)
+    slate:SetPoint("TOPLEFT", bx, 0)
+    slate:SetSize(bw, BODY_H)
+    local tex = slate:CreateTexture(nil, "BACKGROUND")
+    tex:SetAllPoints()
+    tex:SetTexture(MEDIA .. "Chalkboard")
+    room.title = Label(slate, 26, C.chalk, MORPHEUS)
+    room.title:SetPoint("TOPLEFT", 26, -22)
+    room.tagline = Label(slate, 13, C.chalkDim, MORPHEUS)
+    room.tagline:SetPoint("TOPLEFT", room.title, "BOTTOMLEFT", 0, -4)
+    room.tagline:SetWidth(bw - 52)
+    room.list = List(room, slate, bw - 40, BODY_H - 82 - 146, 30, "chalk", true)
+    room.list.scroll:SetPoint("TOPLEFT", 22, -82)
+
+    local rule = Fill(slate, 0.93, 0.94, 0.91, 0.22, "ARTWORK")
+    rule:SetHeight(2)
+    rule:SetPoint("BOTTOMLEFT", 22, 138)
+    rule:SetPoint("BOTTOMRIGHT", -22, 138)
+    local tl = Label(slate, 17, C.chalkGold, MORPHEUS)
+    tl:SetPoint("BOTTOMLEFT", 24, 112)
+    tl:SetText("Your tally")
+    room.tally = {}
+    local colW = (bw - 48) / 4
+    for i = 1, #TALLY do
+        local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
+        local v = Label(slate, 22, C.chalk, MORPHEUS)
+        v:SetPoint("BOTTOMLEFT", 24 + col * colW, 70 - row * 44)
+        local k = Label(slate, 11, C.chalkDim, MORPHEUS)
+        k:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -1)
+        k:SetText(TALLY[i][1])
+        room.tally[i] = v
+    end
 end
 
 local function BoardEntries(b)
@@ -631,40 +1250,43 @@ local function BoardEntries(b)
     return out
 end
 
-local function RenderBoards()
+local function RenderBoards(room)
     local current = BOARDS[1]
+    SideBegin(room.side)
     for i, b in ipairs(BOARDS) do
         if b.key == board then current = b end
-        SetSide(i, b.icon, b.label, nil, b.key == board, function() board = b.key end)
+        SideItem(room.side, i, { label = b.label, icon = b.icon, on = b.key == board, onClick = function() board = b.key end })
     end
-    SetHeader(CHALK .. current.title .. "|r", current.sub)
+    room.title:SetText(current.title)
+    room.tagline:SetText(current.sub)
 
-    local n = 0
-    local function line(o)
-        n = n + 1
-        SetLine(GetLine(n), o)
+    local L = room.list
+    Begin(L)
+    local g = ns.Guild()
+    local entries = g and BoardEntries(current) or {}
+    local others = 0
+    for _, e in ipairs(entries) do
+        if e.name ~= ns.me then others = others + 1 end
     end
-
-    if not ns.Guild() then
-        line({ text = CHALK .. "You're not in a guild. Nobody to compare yourself to.|r" })
+    if not g then
+        Add(L, { text = CHALK_DIM .. "You're not in a guild. Nobody to compare yourself to.|r", noLine = true })
+    elseif others == 0 then
+        -- Just you: top of the board, technically
+        local me = g.members[ns.me]
+        local value = me and (current.text and current.text(me) or (CHALK .. Commas(current.value(me)) .. "|r")) or ""
+        Add(L, { rank = MEDAL[1] .. "1.|r", text = "|cff9fdcff" .. ns.BaseName(ns.me) .. "|r  " .. CHALK_DIM .. "top of the board, technically|r",
+                 right = value, rightW = 200 })
+        for i = 2, 4 do Add(L, { rank = CHALK_DIM .. i .. ".|r", text = CHALK_DIM .. "empty stool|r" }) end
+        Add(L, { text = CHALK_DIM .. "Rivals get chalked up here once guildies run the addon.|r", noLine = true })
     else
-        local entries = BoardEntries(current)
-        local max = 1
-        for _, e in ipairs(entries) do max = math.max(max, math.abs(e.value)) end
-        if #entries == 0 then line({ text = CHALK .. "Nobody yet. Suspicious.|r" }) end
         for i, e in ipairs(entries) do
             local who = ClassColored(e.name)
-            if e.name == ns.me then who = who .. GREY .. " (you)|r" end
-            if i == 1 then who = who .. "   " .. GOLD .. "~ " .. current.top .. " ~|r" end
-            line({
-                rank = (MEDAL[i] or CHALK) .. i .. ".|r",
-                icon = i == 1 and current.icon or nil,
-                text = who,
-                right = current.text and current.text(e.m) or (CHALK .. Commas(e.value) .. "|r"),
-                barFrac = e.value > 0 and e.value / max or 0,
-                barColor = current.key == "deaths" and { 0.9, 0.2, 0.2 } or nil,
-            })
+            if e.name == ns.me then who = who .. CHALK_DIM .. " (you)|r" end
+            if i == 1 then who = who .. "   " .. CHALK_GOLD .. "~ " .. current.top .. " ~|r" end
+            Add(L, { rank = (MEDAL[i] or CHALK) .. i .. ".|r", text = who,
+                     right = current.text and current.text(e.m) or (CHALK .. Commas(e.value) .. "|r"), rightW = 200 })
         end
+        if #entries == 0 then Add(L, { text = CHALK_DIM .. "Nobody yet. Suspicious.|r", noLine = true }) end
     end
 
     -- Your record against each guildmate, on the duel boards
@@ -678,131 +1300,320 @@ local function RenderBoards()
             return x.name < y.name
         end)
         if #rivals > 0 then
-            line({})
-            line({ text = GOLD .. "Your rivalries|r" })
+            Add(L, { head = "", h = 12, noLine = true })
+            Add(L, { text = CHALK_GOLD .. "Your rivalries|r", noLine = true })
             for i = 1, math.min(6, #rivals) do
                 local r = rivals[i]
-                local tag = (r.l > r.w and RED .. "owns you|r") or (r.w > r.l and GREEN .. "your victim|r") or (GREY .. "dead even|r")
-                line({ text = "vs " .. ClassColored(r.name) .. "   " .. tag,
-                       right = string.format("%s%d|r W  %s%d|r L", GREEN, r.w, RED, r.l) })
+                local tag = (r.l > r.w and RED .. "owns you|r") or (r.w > r.l and GREEN .. "your victim|r") or (CHALK_DIM .. "dead even|r")
+                Add(L, { text = "vs " .. ClassColored(r.name) .. "   " .. tag,
+                         right = string.format("%s%d|r W  %s%d|r L", GREEN, r.w, RED, r.l), rightW = 120 })
             end
         end
     end
-    content:SetHeight(math.max(1, n * LINE_H))
+    Finish(L)
+
+    local s = ns.char.stats
+    for i, t in ipairs(TALLY) do room.tally[i]:SetText(t[2](s)) end
 end
 
-local function FeedKind(e) return e.kind or "ach" end
+-- ---------------------------------------------------------------------------
+-- Gossip
+-- ---------------------------------------------------------------------------
 
-local function FeedText(e)
-    local kind = FeedKind(e)
-    if kind == "death" then
-        local whos = e.whos or {}
-        local zone = GOLD .. ((e.zone and e.zone ~= "") and e.zone or "the wilderness") .. "|r"
-        if #whos <= 1 then return Pick(OBITS, e.ts)(ClassColored(whos[1]), zone, e.n or 0) end
-        return Pick(MASS, e.ts)(zone, NameList(whos, 3))
-    elseif kind == "duel" then
-        return Pick(e.fled and FLED or DUELS, e.ts)(ClassColored(e.who), ClassColored(e.loser))
-    elseif kind == "chess" then
-        local a, b, moves = ClassColored(e.who), ClassColored(e.loser), math.floor(((e.plies or 0) + 1) / 2)
-        if e.how == "checkmate" then return string.format("%s checkmated %s in %d moves.", a, b, moves) end
-        if e.how == "resign" then return string.format("%s tipped their king to %s.", b, a) end
-        if e.how == "stalemate" then return string.format("%s and %s stalemated. Nobody wins, everybody's tired.", a, b) end
-        return string.format("%s and %s called it a draw at the chess board.", a, b)
-    end
-    local d = ns.byId[e.id]
-    local label = d and (GOLD .. "[" .. d.name .. "]|r") or (GREY .. "[removed]|r")
-    local first = e.first and ("  " .. GOLD .. "GUILD FIRST!|r") or ""
-    if d and d.cat == "Shame" then return Pick(SHAME_EARNED, e.ts)(ClassColored(e.who), label) .. first end
-    return ClassColored(e.who) .. " earned " .. label .. (d and (GREY .. "  +" .. (d.points or 0) .. "|r") or "") .. first
-end
-
-local function FeedIcon(e)
-    local kind = FeedKind(e)
-    if kind == "death" then return SKULL end
-    if kind == "duel" then return ICONS .. (e.fled and "Ability_Rogue_Sprint" or "Ability_Warrior_Challange") end
-    if kind == "chess" then return MEDIA .. "ChessWK" end
-    local d = ns.byId[e.id]
-    return d and d.icon or QUESTION
-end
-
-local function RenderFeed()
-    local g = ns.Guild()
-    local counts, visible = { all = 0, ach = 0, death = 0, duel = 0, chess = 0 }, {}
-    for _, e in ipairs(g and g.feed or {}) do
-        local kind = FeedKind(e)
-        if kind ~= "death" or ns.settings.obituaries then
-            counts.all = counts.all + 1
-            counts[kind] = (counts[kind] or 0) + 1
-            if feedFilter == "all" or feedFilter == kind then visible[#visible + 1] = e end
-        end
-    end
+local function BuildFeed(room)
+    local fr = room.frame
+    room.chips = {}
     for i, ff in ipairs(FEED_FILTERS) do
-        SetSide(i, ff.icon, ff.label, tostring(counts[ff.key] or 0), ff.key == feedFilter,
-                function() feedFilter = ff.key end)
-    end
-    SetHeader("Tavern Gossip", ns.settings.obituaries and "Who earned what, who died where, who lost to whom."
-              or "Unlocks and duels. Obituaries are hidden (/inn obits on).")
-
-    local n = 0
-    local function line(o)
-        n = n + 1
-        SetLine(GetLine(n), o)
-    end
-    if not g then
-        line({ text = GREY .. "You're not in a guild. Nobody to gossip about.|r" })
-    elseif #visible == 0 then
-        line({ text = GREY .. "Quiet night. Go do something heroic. Or stupid.|r" })
-    end
-    for _, e in ipairs(visible) do
-        line({ icon = FeedIcon(e), text = FeedText(e), right = GREY .. Ago(e.ts) .. "|r", rightW = 70 })
-    end
-    if g then
-        line({})
-        line({ text = GREY .. "Only guildmates running the addon show up here.|r" })
-    end
-    content:SetHeight(math.max(1, n * LINE_H))
-end
-
-local function RenderChess()
-    local G = ns.ChessGame
-    local function Act(fn)
-        return function()
-            fn()
+        local c = Chip(fr, 108, 24)
+        c:SetPoint("TOPLEFT", (i - 1) * 113, -2)
+        c.onClick = function()
+            feedFilter = ff.key
+            ScrollTop(room)
             Render()
         end
+        room.chips[i] = c
     end
-    SetSide(1, MEDIA .. "ChessWK", "Open the board", nil, false, function() ns.ChessUI.Open() end)
-    SetSide(2, MEDIA .. "ChessBK", "Play the barkeep", nil, false, function() G.Practice("barkeep") end)
-    SetSide(3, MEDIA .. "ChessWN", "Practice board", nil, false, function() G.Practice("solo") end)
-    local s = ns.char.stats
-    SetHeader("Tavern Chess", string.format("Your rating: %s%d|r   %s%d|r W  %s%d|r L  %s%d|r D", GOLD, G.MyElo(), GREEN,
-              s.chessWins or 0, RED, s.chessLosses or 0, GREY, s.chessDraws or 0))
+    room.announce = CreateFrame("CheckButton", nil, fr, "UICheckButtonTemplate")
+    room.announce:SetSize(24, 24)
+    room.announce:SetPoint("TOPRIGHT", 0, -2)
+    room.announce:SetScript("OnClick", function()
+        ns.settings.announce = not ns.settings.announce
+        Render()
+    end)
+    local al = Label(fr, 11, C.muted)
+    al:SetPoint("RIGHT", room.announce, "LEFT", -2, 0)
+    al:SetJustifyH("RIGHT")
+    al:SetText("Post my unlocks in guild chat")
 
-    local n = 0
-    local function line(o)
-        n = n + 1
-        SetLine(GetLine(n), o)
+    local cork = CreateFrame("Frame", nil, fr)
+    cork:SetPoint("TOPLEFT", 0, -34)
+    cork:SetSize(BODY_W, BODY_H - 34)
+    local tex = cork:CreateTexture(nil, "BACKGROUND")
+    tex:SetAllPoints()
+    tex:SetTexture(MEDIA .. "Cork")
+    room.list = List(room, cork, BODY_W - 40, BODY_H - 34 - 30, 28, "ink", true)
+    room.list.scroll:SetPoint("TOPLEFT", 18, -15)
+    room.notes = {}
+end
+
+-- One parchment note per day, behind that day's rows
+local function Note(room, i)
+    local n = room.notes[i]
+    if n then return n end
+    n = CreateFrame("Frame", nil, room.list.content)
+    n:SetFrameLevel(room.list.content:GetFrameLevel() + 1)
+    local paper = n:CreateTexture(nil, "BACKGROUND")
+    paper:SetAllPoints()
+    paper:SetTexture(MEDIA .. "Parchment")
+    for _, side in ipairs({ "TOPLEFT", "TOPRIGHT" }) do
+        local pin = n:CreateTexture(nil, "ARTWORK")
+        pin:SetSize(12, 12)
+        pin:SetPoint(side, side == "TOPLEFT" and 8 or -8, -6)
+        pin:SetTexture(MEDIA .. "ChessDot")
+        pin:SetVertexColor(0.55, 0.1, 0.06)
     end
-    local g = ns.Guild()
+    room.notes[i] = n
+    return n
+end
+
+local function DayTitle(ts)
+    local now = ns.Now()
+    if DayKey(ts) == DayKey(now) then return "Today" end
+    if DayKey(ts) == DayKey(now - 86400) then return "Yesterday" end
+    if now - ts < 6 * 86400 then return date("%A", ts) end
+    return (date("%d %B", ts):gsub("^0", ""))
+end
+
+local function RenderFeed(room)
+    local all = VisibleFeed()
+    local counts, visible = { all = #all }, {}
+    for _, e in ipairs(all) do
+        local kind = FeedKind(e)
+        counts[kind] = (counts[kind] or 0) + 1
+        if feedFilter == "all" or feedFilter == kind then visible[#visible + 1] = e end
+    end
+    for i, ff in ipairs(FEED_FILTERS) do
+        SetChip(room.chips[i], ff.label, tostring(counts[ff.key] or 0), ff.key == feedFilter)
+    end
+    room.announce:SetChecked(ns.settings.announce and true or false)
+
+    local L = room.list
+    Begin(L)
+    local notes = 0
+    local function Pin(top)
+        notes = notes + 1
+        local n = Note(room, notes)
+        n:ClearAllPoints()
+        n:SetPoint("TOPLEFT", L.content, "TOPLEFT", 0, -top)
+        n:SetSize(L.w, L.y - top)
+        n:Show()
+    end
+    local function Paper(o)
+        o.x, o.w = 18, L.w - 36
+        return Add(L, o)
+    end
+
+    local i = 1
+    local shown = 0
+    while i <= #visible and shown < 80 do
+        local day = DayKey(visible[i].ts)
+        local j = i
+        while j + 1 <= #visible and DayKey(visible[j + 1].ts) == day do j = j + 1 end
+        local n = j - i + 1
+        local top = L.y
+        L.y = L.y + 8
+        Paper({ h = 34, head = DayTitle(visible[i].ts),
+                right = INK_DIM .. date("%a %d %b", visible[i].ts):gsub(" 0", " ") .. "  ·  " .. n
+                        .. (n == 1 and " thing happened" or " things happened") .. "|r", rightW = 240 })
+        for k = i, j do
+            local e = visible[k]
+            shown = shown + 1
+            Paper({ icon = FeedIcon(e), iconSize = 20, text = FeedText(e, true),
+                    right = INK_DIM .. date("%H:%M", e.ts) .. "|r", rightW = 44, noLine = k == j })
+            if shown >= 80 then break end
+        end
+        L.y = L.y + 10
+        Pin(top)
+        L.y = L.y + 14
+        i = j + 1
+    end
+    if #visible == 0 then
+        local top = L.y
+        L.y = L.y + 8
+        Paper({ head = "Quiet night", h = 34 })
+        Paper({ text = INK_DIM .. "Go do something heroic. Or stupid. Then come back.|r", noLine = true })
+        L.y = L.y + 10
+        Pin(top)
+        L.y = L.y + 14
+    end
+    Add(L, { text = "|cfff0dfbfOnly guildies running the addon pin their news here.|r", noLine = true })
+    Finish(L)
+    for k = notes + 1, #room.notes do room.notes[k]:Hide() end
+end
+
+-- ---------------------------------------------------------------------------
+-- Chess
+-- ---------------------------------------------------------------------------
+
+local SQ = 42
+local BOARD_W = SQ * 8 + 16
+local LIGHT, DARK = { 0.86, 0.76, 0.59 }, { 0.54, 0.37, 0.23 }
+
+local function BuildChess(room)
+    local fr = room.frame
+    room.title = Heading(fr, "")
+    room.title:SetPoint("TOPLEFT", 2, -2)
+    room.status = Label(fr, 12, { 0.56, 0.82, 0.42 })
+    room.status:SetPoint("LEFT", room.title, "RIGHT", 10, 0)
+
+    local b = CreateFrame("Frame", nil, fr)
+    b:SetPoint("TOPLEFT", 0, -28)
+    b:SetSize(BOARD_W, BOARD_W)
+    local wood = b:CreateTexture(nil, "BACKGROUND")
+    wood:SetAllPoints()
+    wood:SetTexture(MEDIA .. "Plank")
+    wood:SetVertexColor(0.75, 0.55, 0.4)
+    Border(b, C.brass)
+    room.squares = {}
+    for i = 1, 64 do
+        local col, row = (i - 1) % 8, math.floor((i - 1) / 8)
+        local sq = b:CreateTexture(nil, "BORDER")
+        sq:SetSize(SQ, SQ)
+        sq:SetPoint("TOPLEFT", 8 + col * SQ, -8 - row * SQ)
+        local mark = b:CreateTexture(nil, "ARTWORK")
+        mark:SetAllPoints(sq)
+        local piece = b:CreateTexture(nil, "OVERLAY")
+        piece:SetSize(SQ - 4, SQ - 4)
+        piece:SetPoint("CENTER", sq, "CENTER")
+        room.squares[i] = { sq = sq, mark = mark, piece = piece }
+    end
+    b:EnableMouse(true)
+    b:SetScript("OnMouseUp", function() ns.ChessUI.Open() end) -- the full board, to play on
+    room.board = b
+    room.under = List(room, fr, BOARD_W, 32, 32)
+    room.under.scroll:SetPoint("TOPLEFT", b, "BOTTOMLEFT", 0, -8)
+
+    local rx = BOARD_W + 18
+    local rw = BODY_W - rx
+    local rating = Well(fr)
+    rating:SetPoint("TOPLEFT", rx, 0)
+    rating:SetSize(rw, 64)
+    local rl = Label(rating, 11, C.muted)
+    rl:SetPoint("TOPLEFT", 14, -12)
+    rl:SetText("Tavern rating")
+    room.elo = Shadow(Label(rating, 26, C.gold))
+    room.elo:SetPoint("TOPLEFT", rl, "BOTTOMLEFT", 0, -3)
+    room.record = Label(rating, 13, C.cream)
+    room.record:SetPoint("RIGHT", -14, 0)
+    room.record:SetJustifyH("RIGHT")
+
+    local bk = Well(fr)
+    bk:SetPoint("TOPLEFT", rx, -(64 + GAP))
+    bk:SetSize(rw, 100)
+    local bh = Heading(bk, "Play the barkeep", 14)
+    bh:SetPoint("TOPLEFT", 14, -12)
+    local bs = Label(bk, 11, C.muted)
+    bs:SetPoint("LEFT", bh, "RIGHT", 8, 0)
+    bs:SetText("He's had a few. Practice games don't count.")
+    room.quip = Label(bk, 12, { 0.85, 0.78, 0.65 })
+    room.quip:SetPoint("TOPLEFT", 14, -38)
+    room.quip:SetWidth(rw - 28)
+    RedButton(bk, "Practice board", 120, 22, function() ns.ChessGame.Practice("solo") end):SetPoint("BOTTOMRIGHT", -14, 12)
+    RedButton(bk, "Pull up a chair", 130, 22, function() ns.ChessGame.Practice("barkeep") end)
+        :SetPoint("BOTTOMRIGHT", -140, 12)
+
+    local ch = Well(fr)
+    local top = 64 + 100 + 2 * GAP
+    ch:SetPoint("TOPLEFT", rx, -top)
+    ch:SetSize(rw, BODY_H - top)
+    Heading(ch, "Challenge a guildie", 14):SetPoint("TOPLEFT", 14, -12)
+    room.challenge = List(room, ch, rw - 12, BODY_H - top - 44, 28, "wall", true)
+    room.challenge.scroll:SetPoint("TOPLEFT", 8, -36)
+end
+
+local function RenderChess(room)
+    local G, Ch = ns.ChessGame, ns.Chess
     local game = G.Current()
+    local s, san = G.State()
+    if not s then s, san = Ch.New(), {} end
+
+    -- Title and whose move it is
+    if game then
+        local title = game.mode == "guild" and ("You vs " .. ClassColored(game.opp))
+                      or (game.mode == "barkeep" and "You vs the barkeep" or "Practice board")
+        room.title:SetText(title)
+        if game.over then room.status:SetText(MUTED .. "game over|r")
+        elseif game.mode == "solo" then room.status:SetText(GREEN .. (s.turn == "w" and "White" or "Black") .. " to move|r")
+        elseif G.MyTurn() then room.status:SetText(GREEN .. "your move|r")
+        else room.status:SetText(MUTED .. "their move|r") end
+    else
+        room.title:SetText("No game on the board")
+        room.status:SetText(MUTED .. "pull up a chair|r")
+    end
+
+    -- The position, seen from your side
+    local flip = game and game.me == "b"
+    local last
+    if game and #game.moves > 0 then
+        local uci = game.moves[#game.moves]
+        last = { [Ch.Parse(uci:sub(1, 2))] = true, [Ch.Parse(uci:sub(3, 4))] = true }
+    end
+    for row = 1, 8 do
+        for col = 1, 8 do
+            local sq = flip and Ch.Sq(9 - col, row) or Ch.Sq(col, 9 - row)
+            local cell = room.squares[(row - 1) * 8 + col]
+            local c = ((Ch.FileOf(sq) + Ch.RankOf(sq)) % 2 == 0) and DARK or LIGHT
+            cell.sq:SetColorTexture(c[1], c[2], c[3], 1)
+            if last and last[sq] then
+                cell.mark:SetColorTexture(1, 0.85, 0.2, 0.32)
+                cell.mark:Show()
+            else
+                cell.mark:Hide()
+            end
+            local p = s.board[sq]
+            if p then
+                cell.piece:SetTexture(MEDIA .. "Chess" .. p:sub(1, 1):upper() .. p:sub(2, 2))
+                cell.piece:SetAlpha(game and 1 or 0.55)
+                cell.piece:Show()
+            else
+                cell.piece:Hide()
+            end
+        end
+    end
+
+    -- Under the board: the last few moves, and the button to play
+    local L = room.under
+    Begin(L)
+    if game then
+        local parts = {}
+        for i = math.max(1, #san - 5), #san do
+            parts[#parts + 1] = (i % 2 == 1 and (math.floor((i + 1) / 2) .. ". ") or "") .. san[i]
+        end
+        Add(L, { text = MUTED .. (#san == 0 and "No moves yet." or table.concat(parts, "  ")) .. "|r",
+                 btn = "Open board", onClick = function() ns.ChessUI.Open() end, noLine = true })
+    else
+        Add(L, { text = MUTED .. "Challenge a guildie, or play the barkeep.|r", noLine = true })
+    end
+    Finish(L)
+
+    local st = ns.char.stats
+    room.elo:SetText(tostring(G.MyElo()))
+    room.record:SetText(string.format("%s%d|r won   %s%d|r lost   %s%d|r drawn", GREEN, st.chessWins or 0, SHAME,
+                                      st.chessLosses or 0, GREY, st.chessDraws or 0))
+    room.quip:SetText("\"" .. Pick(BARKEEP_QUIPS, math.floor(GetTime() / 600)) .. "\"")
+
+    -- Challengers: an invite, a pending challenge, and everyone online with the addon
+    L = room.challenge
+    Begin(L)
+    local function Act(fn) return function() fn() Render() end end
     local busy = game and game.mode == "guild" and not game.over
-
-    local inv = G.Invite()
+    local inv, pend = G.Invite(), G.Pending()
     if inv then
-        line({ icon = MEDIA .. "ChessWK", text = GOLD .. ClassColored(inv.from) .. " challenges you to a game!|r",
-               right = inv.elo and (GREY .. "rated " .. inv.elo .. "|r") or "", button = "Accept", onClick = Act(G.Accept) })
+        Add(L, { icon = MEDIA .. "ChessWK", iconSize = 18, text = GOLD .. ClassColored(inv.from) .. " challenges you!|r",
+                 right = inv.elo and (MUTED .. "rated " .. inv.elo .. "|r") or "", rightW = 70, btn = "Accept", onClick = Act(G.Accept) })
     end
-    local pend = G.Pending()
-    if pend then line({ icon = MEDIA .. "ChessWK", text = "Waiting for " .. ClassColored(pend.to) .. " to answer..." }) end
-    if game and not game.over then
-        local who = game.mode == "guild" and ClassColored(game.opp) or (game.mode == "barkeep" and "the barkeep" or "yourself")
-        line({ icon = MEDIA .. "ChessW" .. (game.me == "b" and "Q" or "K"),
-               text = "Your game against " .. who .. (G.MyTurn() and (": " .. GREEN .. "your move|r") or ""),
-               button = "Open board", onClick = function() ns.ChessUI.Open() end })
-    end
-    if n > 0 then line({}) end
-
-    line({ text = GOLD .. "Guildies online with the addon|r" })
+    if pend then Add(L, { icon = MEDIA .. "ChessWK", iconSize = 18, text = "Waiting for " .. ClassColored(pend.to) .. " to answer..." }) end
+    local g = ns.Guild()
     local players, others = {}, 0
     for name, e in pairs(ns.roster) do
         if e.online and not ns.SameName(name, ns.me) then
@@ -816,49 +1627,68 @@ local function RenderChess()
         return a.name < b.name
     end)
     for _, p in ipairs(players) do
-        local st = p.m.stats
-        local played = (st.cw or 0) + (st.cl or 0) + (st.cd or 0)
-        line({ icon = MEDIA .. "ChessBP",
-               text = ClassColored(p.name) .. GREY .. "  level " .. (p.e.level or "?") .. "|r",
-               right = played > 0 and string.format("%s%d|r  %d-%d-%d", GOLD, st.ce or 1200, st.cw or 0, st.cl or 0, st.cd or 0)
-                       or (GREY .. "unrated|r"),
-               button = "Challenge", disabled = busy or pend ~= nil,
-               onClick = Act(function() G.Challenge(p.name) end) })
+        local sst = p.m.stats
+        local played = (sst.cw or 0) + (sst.cl or 0) + (sst.cd or 0)
+        Add(L, { dot = ONLINE, text = ClassColored(p.name) .. MUTED .. "  level " .. (p.e.level or "?") .. "|r",
+                 right = played > 0 and string.format("%s%d|r  %d-%d-%d", GOLD, sst.ce or 1200, sst.cw or 0, sst.cl or 0, sst.cd or 0)
+                         or (MUTED .. "unrated|r"), rightW = 90,
+                 btn = "Challenge", disabled = busy or pend ~= nil, onClick = Act(function() G.Challenge(p.name) end) })
     end
     if #players == 0 then
-        line({ text = GREY .. "Nobody with the addon is online. The barkeep is always up for a game.|r" })
+        Add(L, { text = MUTED .. "Nobody with the addon is online.|r", noLine = true })
+        Add(L, { text = MUTED .. "The barkeep is always up for a game.|r", noLine = true })
     end
     if others > 0 then
-        line({ text = GREY .. string.format("+%d online without the addon. Peer pressure them.|r", others) })
+        Add(L, { text = MUTED .. string.format("+%d online without the addon. Peer pressure them.|r", others), noLine = true })
     end
-    if busy then
-        line({})
-        line({ text = GREY .. "Finish (or resign) your current game to challenge someone else.|r" })
-    end
-    content:SetHeight(math.max(1, n * LINE_H))
+    if busy then Add(L, { text = MUTED .. "Finish (or resign) your game to challenge someone else.|r", noLine = true }) end
+    Finish(L)
 end
 
 -- ---------------------------------------------------------------------------
--- The Workshop: professions, recipes, and who can make what
+-- Workshop
 -- ---------------------------------------------------------------------------
 
-local function IsOnline(name)
-    if name == ns.me then return true end
-    local e = ns.RosterEntry(name)
-    return e ~= nil and e.online == true
+local function BuildWorkshop(room)
+    local fr = room.frame
+    local side = Well(fr)
+    side:SetPoint("TOPLEFT")
+    side:SetSize(SIDE_W, BODY_H)
+    SideList(room, side, 6, -6, SIDE_W - 12, 30, 2)
+    local mx, mw = SIDE_W + GAP, BODY_W - SIDE_W - GAP
+    room.title = Heading(fr, "The Workshop")
+    room.title:SetPoint("TOPLEFT", mx + 2, -2)
+    room.sub = Label(fr, 11, C.muted)
+    room.sub:SetPoint("TOPLEFT", room.title, "BOTTOMLEFT", 0, -4)
+    room.sub:SetWidth(mw - 230)
+    room.search = SearchBox(fr, "TheInnSearch", "Search recipes...", 190)
+    room.search:SetPoint("TOPRIGHT", -4, -6)
+    room.search.onChange = function(text)
+        searchText = text
+        workshopWho = nil
+        ScrollTop(room)
+        Render()
+    end
+    local well = Well(fr)
+    well:SetPoint("TOPLEFT", mx, -42)
+    well:SetSize(mw, BODY_H - 42)
+    room.list = List(room, well, mw - 10, BODY_H - 50, 28, "wall", true)
+    room.list.scroll:SetPoint("TOPLEFT", 6, -4)
 end
 
-local function ClearSearch()
+local function ClearSearch(room)
     searchText = ""
-    if f.search then f.search:SetText("") end
+    room.search.value = ""
+    room.search:SetText("")
 end
 
-local function RenderWorkshop()
+local function RenderWorkshop(room)
     local Wk = ns.Workshop
-    local n = 0
-    local function line(o)
-        n = n + 1
-        SetLine(GetLine(n), o)
+    local L = room.list
+    Begin(L)
+    local function SetHeader(title, sub)
+        room.title:SetText(title)
+        room.sub:SetText(sub or "")
     end
     local crafters = Wk.Crafters()
     local keys = {}
@@ -866,12 +1696,14 @@ local function RenderWorkshop()
     table.sort(keys, function(a, b) return Wk.Name(a) < Wk.Name(b) end)
     if not crafters[workshopProf] then workshopProf, workshopWho = keys[1], nil end
     local searching = #searchText >= 2
+    SideBegin(room.side)
     for i, key in ipairs(keys) do
-        SetSide(i, Wk.Icon(key), Wk.Name(key), tostring(#crafters[key]), key == workshopProf and not searching,
-                function()
-                    workshopProf, workshopWho = key, nil
-                    ClearSearch()
-                end)
+        SideItem(room.side, i, { label = Wk.Name(key), icon = Wk.Icon(key), count = tostring(#crafters[key]),
+                                 on = key == workshopProf and not searching,
+                                 onClick = function()
+                                     workshopProf, workshopWho = key, nil
+                                     ClearSearch(room)
+                                 end })
     end
 
     local g = ns.Guild()
@@ -882,11 +1714,11 @@ local function RenderWorkshop()
     if searching then
         local results = Wk.Search(searchText, 100)
         SetHeader("Who can make it?", "Recipes matching \"" .. searchText .. "\". Ask them nicely.")
-        if #results == 0 then line({ text = GREY .. "Nobody in the guild knows a recipe like that. Yet.|r" }) end
+        if #results == 0 then Add(L, { text = MUTED .. "Nobody in the guild knows a recipe like that. Yet.|r", noLine = true }) end
         for _, r in ipairs(results) do
-            line({ icon = Wk.Icon(r.key), text = GOLD .. r.name .. "|r", right = NameList(r.who, 3), rightW = 250 })
+            Add(L, { icon = Wk.Icon(r.key), iconSize = 18, text = GOLD .. r.name .. "|r", right = NameList(r.who, 3), rightW = 250 })
         end
-        if results.more then line({ text = GREY .. "...and " .. results.more .. " more. Try a longer search.|r" }) end
+        if results.more then Add(L, { text = MUTED .. "...and " .. results.more .. " more. Try a longer search.|r", noLine = true }) end
     elseif shown then
         local list = {}
         for id in pairs(shown.recipes or {}) do list[#list + 1] = { id = id, name = Wk.RecipeName(id) } end
@@ -896,15 +1728,14 @@ local function RenderWorkshop()
             return a.id < b.id
         end)
         SetHeader(ClassColored(workshopWho) .. "'s " .. Wk.Name(workshopProf),
-                  string.format("%d recipe%s known, skill %d/%d.", #list, #list == 1 and "" or "s",
-                                shown.rank or 0, shown.max or 0))
-        line({ text = GREY .. "Back to everyone with " .. Wk.Name(workshopProf) .. "|r", button = "Back",
-               onClick = function()
-                   workshopWho = nil
-                   Render()
-               end })
+                  string.format("%d recipe%s known, skill %d/%d.", #list, #list == 1 and "" or "s", shown.rank or 0, shown.max or 0))
+        Add(L, { text = MUTED .. "Back to everyone with " .. Wk.Name(workshopProf) .. "|r", btn = "Back",
+                 onClick = function()
+                     workshopWho = nil
+                     Render()
+                 end })
         for _, r in ipairs(list) do
-            line({ icon = Wk.Icon(workshopProf), text = r.name or (GREY .. "Recipe #" .. r.id .. "|r") })
+            Add(L, { icon = Wk.Icon(workshopProf), iconSize = 18, text = r.name or (MUTED .. "Recipe #" .. r.id .. "|r") })
         end
     elseif workshopProf then
         local name = Wk.Name(workshopProf)
@@ -919,35 +1750,39 @@ local function RenderWorkshop()
         for i, c in ipairs(list) do
             local e = c.e
             local who = ClassColored(c.name)
-            if c.name == ns.me then who = who .. GREY .. " (you)|r"
-            elseif not IsOnline(c.name) then who = who .. GREY .. "  offline|r" end
-            local recipes = (e.n or 0) > 0 and (e.n .. " recipe" .. (e.n == 1 and "" or "s")) or (GREY .. "no recipes yet|r")
-            line({ rank = GOLD .. i .. ".|r", text = who, rightW = 250,
-                   right = string.format("%s%d|r/%d    %s", GOLD, e.rank or 0, e.max or 0, recipes),
-                   barFrac = (e.max or 0) > 0 and math.min(1, (e.rank or 0) / e.max) or 0,
-                   button = (e.n or 0) > 0 and "Recipes" or nil,
-                   onClick = function()
-                       workshopWho = c.name
-                       scroll:SetVerticalScroll(0)
-                       Render()
-                   end })
+            if c.name == ns.me then who = who .. MUTED .. " (you)|r" end
+            local recipes = (e.n or 0) > 0 and (e.n .. " recipe" .. (e.n == 1 and "" or "s")) or (MUTED .. "no recipes yet|r")
+            Add(L, { rank = GOLD .. i .. ".|r", dot = IsOnline(c.name) and ONLINE or OFFLINE, text = who,
+                     bar = { e.rank or 0, math.max(1, e.max or 0) }, barW = 160,
+                     barText = (e.rank or 0) .. " / " .. (e.max or 0), h = 40,
+                     right = recipes, rightW = 110,
+                     btn = (e.n or 0) > 0 and "Recipes" or nil,
+                     onClick = function()
+                         workshopWho = c.name
+                         ScrollTop(room)
+                         Render()
+                     end })
         end
         local mine = ns.char.profs and ns.char.profs[workshopProf]
         if mine and (mine.n or 0) == 0 then
-            line({})
-            line({ text = GREY .. "Open your " .. name .. " window once to share your recipes.|r" })
+            Add(L, { text = MUTED .. "Open your " .. name .. " window once to share your recipes.|r", noLine = true })
         elseif mine and mine.partial then
-            line({})
-            line({ text = GOLD .. "Some of your categories were collapsed, so new recipes in them were missed.|r" })
-            line({ text = GOLD .. "Open your profession window with everything expanded to update.|r" })
+            Add(L, { text = GOLD .. "Some of your categories were collapsed, so new recipes in them were missed.|r", noLine = true })
+            Add(L, { text = GOLD .. "Open your profession window with everything expanded to update.|r", noLine = true })
         end
     else
         SetHeader("The Workshop", "Who can craft what. Open your profession window to share your recipes.")
-        line({ text = GREY .. "No professions on the board yet. Open your profession window once,|r" })
-        line({ text = GREY .. "and get your guildies to install the addon.|r" })
+        Add(L, { text = MUTED .. "No professions on the board yet. Open your profession window once,|r", noLine = true })
+        Add(L, { text = MUTED .. "and get your guildies to install the addon.|r", noLine = true })
     end
-    content:SetHeight(math.max(1, n * LINE_H))
+    Finish(L)
 end
+
+-- ---------------------------------------------------------------------------
+-- Settings
+-- ---------------------------------------------------------------------------
+
+local SCALES = { 0.8, 0.9, 1, 1.1, 1.2 }
 
 local SETTINGS = {
     { key = "announce",     label = "Post my unlocks in guild chat",
@@ -956,40 +1791,94 @@ local SETTINGS = {
     { key = "othersToasts", label = "Show alerts for guildies' unlocks" },
     { key = "obituaries",   label = "Show guildies' deaths in the gossip",
       note = "They still count on the Scoreboard either way." },
-    { key = "minimapButton", label = "Show the minimap button",
-      after = function() UI.UpdateMinimapButton() end },
     { key = "craftTooltip", label = "Show who can craft an item in its tooltip",
       note = "\"Craftable by: ...\" from the recipes your guildies have shared." },
+    { key = "minimapButton", label = "Show the minimap button",
+      after = function() UI.UpdateMinimapButton() end },
     { key = "sound",        label = "Play sounds",
       note = "The fanfare for your unlocks, and the chime for a chess challenge." },
 }
 
-local function RenderSettings()
-    SetHeader("Settings", "Click a button to switch it. Everything here is just for you.")
-    local n = 0
-    local function line(o)
-        n = n + 1
-        SetLine(GetLine(n), o)
-    end
+local function BuildSettings(room)
+    local well = Well(room.frame)
+    well:SetAllPoints()
+    local t = Heading(well, "Settings")
+    t:SetPoint("TOPLEFT", 14, -12)
+    local sub = Label(well, 11, C.muted)
+    sub:SetPoint("LEFT", t, "RIGHT", 10, 0)
+    sub:SetText("Click a button to switch it. Everything here is just for you.")
+    room.list = List(room, well, BODY_W - 16, BODY_H - 46, 26, "wall", true)
+    room.list.scroll:SetPoint("TOPLEFT", 8, -38)
+end
+
+local function RenderSettings(room)
+    local L = room.list
+    Begin(L)
     local s = ns.settings
     for _, opt in ipairs(SETTINGS) do
         local on = s[opt.key] ~= false
-        line({ text = opt.label, right = on and (GREEN .. "On|r") or (GREY .. "Off|r"),
-               button = on and "Turn off" or "Turn on",
-               onClick = function()
-                   s[opt.key] = not on
-                   if opt.after then opt.after() end
-                   Render()
-               end })
-        if opt.note then line({ text = GREY .. "    " .. opt.note .. "|r" }) end
+        Add(L, { text = opt.label, right = on and (GREEN .. "On|r") or (GREY .. "Off|r"), rightW = 40,
+                 btn = on and "Turn off" or "Turn on", noLine = opt.note ~= nil,
+                 onClick = function()
+                     s[opt.key] = not on
+                     if opt.after then opt.after() end
+                     Render()
+                 end })
+        if opt.note then Add(L, { text = MUTED .. "    " .. opt.note .. "|r" }) end
     end
-    content:SetHeight(math.max(1, n * LINE_H))
+    local scale = s.scale or 1
+    Add(L, { text = "Window size", right = GOLD .. math.floor(scale * 100 + 0.5) .. "%|r", rightW = 50, btn = "Change",
+             noLine = true,
+             onClick = function()
+                 local nextScale = SCALES[1]
+                 for i, v in ipairs(SCALES) do
+                     if math.abs(v - scale) < 0.01 then nextScale = SCALES[i % #SCALES + 1] end
+                 end
+                 s.scale = nextScale
+                 f:SetScale(nextScale)
+                 Render()
+             end })
+    Add(L, { text = MUTED .. "    Steps through 80% to 120%. Drag the window by its header to move it.|r" })
+    Finish(L)
+end
+
+-- ---------------------------------------------------------------------------
+-- The frame: header, rooms, tabs
+-- ---------------------------------------------------------------------------
+
+local ROOMS = {
+    home     = { BuildHome, RenderHome },
+    ach      = { BuildTrophies, RenderTrophies },
+    boards   = { BuildBoards, RenderBoards },
+    feed     = { BuildFeed, RenderFeed },
+    chess    = { BuildChess, RenderChess },
+    workshop = { BuildWorkshop, RenderWorkshop },
+    settings = { BuildSettings, RenderSettings },
+}
+
+local TABS = {
+    { "home", "Common Room", 128 }, { "ach", "Trophy Wall", 116 }, { "boards", "Scoreboard", 112 },
+    { "feed", "Gossip", 88 }, { "chess", "Chess", 80 }, { "workshop", "Workshop", 104 },
+}
+
+local VERDICT_W = 210
+
+-- Largest sign font that fits the board
+local SIGN_W, SIGN_H = 340, 52
+local SIGN_TEXT_W = SIGN_W - 96
+local function FitSignText(fs, text)
+    fs:SetText(text)
+    for size = 21, 12, -1 do
+        Font(fs, MORPHEUS, size)
+        local w = fs:GetStringWidth()
+        if not w or w <= SIGN_TEXT_W then return end
+    end
 end
 
 local function RefreshHeader()
     local points, count = ns.PointsFor(ns.char.earned)
     local total = #ns.defs
-    local pct = total > 0 and math.floor(count / total * 100) or 0
+    local pct = total > 0 and (count / total * 100) or 0
     local inn = InnName()
     if f.signText.shown ~= inn then
         f.signText.shown = inn
@@ -998,45 +1887,219 @@ local function RefreshHeader()
     f.points:SetText(Commas(points))
     f.progress:SetMinMaxValues(0, math.max(1, total))
     f.progress:SetValue(count)
-    f.progress.text:SetText(string.format("%d / %d  (%d%%)", count, total, pct))
-    for _, v in ipairs(VERDICTS) do
+    for i, v in ipairs(VERDICTS) do
         if pct < v[1] then
-            f.verdict:SetText(v[2])
+            local nextTier = VERDICTS[i + 1]
+            local need = math.max(1, math.ceil(v[1] / 100 * total) - count)
+            f.verdict:SetText(v[2] .. (nextTier and ("  ·  " .. need .. " more to " .. GOLD .. nextTier[2] .. "|r") or ""))
             break
         end
     end
     f.patron:SetText(ClassColored(ns.me))
-    local g = ns.Guild()
-    if g then
-        local others = 0
-        for name in pairs(g.members) do
-            if name ~= ns.me then others = others + 1 end
-        end
-        f.regulars:SetText(others == 0 and "No other guildies with the addon yet" or
-                           string.format("%d guild%s with the addon", others, others == 1 and "ie" or "ies"))
-    else
-        f.regulars:SetText("Drinking alone")
+end
+
+local function MakeTab(def, x)
+    local b = CreateFrame("Button", nil, f)
+    b:SetSize(def[3], 40)
+    b:SetPoint("TOPLEFT", x, -(PANEL_H - 3))
+    b:SetFrameLevel(panel:GetFrameLevel() + 6)
+    b.bg = b:CreateTexture(nil, "BACKGROUND")
+    b.bg:SetAllPoints()
+    b.bg:SetTexture(MEDIA .. "Plank")
+    Border(b, C.rim, 2)
+    b.edges[1]:Hide() -- open at the top, where it joins the window
+    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
+    b.hl:SetAllPoints()
+    b.hl:SetColorTexture(1, 0.82, 0, 0.08)
+    b.text = Shadow(Label(b, 13, C.tab))
+    b.text:SetPoint("CENTER", 0, 1)
+    b.text:SetJustifyH("CENTER")
+    b.text:SetText(def[2])
+    b.key = def[1]
+    b:SetScript("OnClick", function() Go(def[1]) end)
+    return b
+end
+
+local function Build()
+    -- The frame is the tavern; the tabs hang below it (outside, so the gaps
+    -- between them don't catch clicks meant for the game)
+    f = CreateFrame("Frame", "TheInnFrame", UIParent)
+    f:SetSize(W, PANEL_H)
+    f:SetPoint("CENTER", 0, (H - PANEL_H) / 2)
+    f:SetClampRectInsets(0, 0, 0, -(H - PANEL_H))
+    f:SetFrameStrata("HIGH")
+    f:SetToplevel(true)
+    f:SetMovable(true)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+    f:SetScale(ns.settings.scale or 1)
+    f:Hide()
+    tinsert(UISpecialFrames, "TheInnFrame")
+
+    -- The tavern: plank wall in a brass-edged frame with iron corners
+    panel = CreateFrame("Frame", nil, f)
+    panel:SetPoint("TOPLEFT")
+    panel:SetSize(W, PANEL_H)
+    local wall = panel:CreateTexture(nil, "BACKGROUND")
+    wall:SetAllPoints()
+    wall:SetTexture(MEDIA .. "Wall")
+    wall:SetVertexColor(0.92, 0.84, 0.76)
+    Border(panel, { 0.07, 0.04, 0.02, 1 }, 2)
+    local brass = CreateFrame("Frame", nil, panel)
+    brass:SetPoint("TOPLEFT", 2, -2)
+    brass:SetPoint("BOTTOMRIGHT", -2, 2)
+    Border(brass, { 0.54, 0.43, 0.2, 1 }, 2)
+    local deco = CreateFrame("Frame", nil, panel)
+    deco:SetAllPoints()
+    deco:SetFrameLevel(panel:GetFrameLevel() + 20)
+    for _, c in ipairs({ { "TOPLEFT", -3, 3, 0, 1, 0, 1 }, { "TOPRIGHT", 3, 3, 1, 0, 0, 1 },
+                         { "BOTTOMLEFT", -3, -3, 0, 1, 1, 0 }, { "BOTTOMRIGHT", 3, -3, 1, 0, 1, 0 } }) do
+        local t = deco:CreateTexture(nil, "OVERLAY")
+        t:SetSize(30, 30)
+        t:SetPoint(c[1], c[2], c[3])
+        t:SetTexture(MEDIA .. "Corner")
+        t:SetTexCoord(c[4], c[5], c[6], c[7])
     end
+
+    -- Header: you, the sign, your bar tab
+    local header = CreateFrame("Frame", nil, panel)
+    header:SetPoint("TOPLEFT")
+    header:SetSize(W, HEADER_H)
+    local lamp = Fill(header, 0.35, 0.18, 0.05, 0.28)
+    lamp:SetPoint("TOPLEFT", 4, -4)
+    lamp:SetPoint("BOTTOMRIGHT", -4, 0)
+    local divider = Fill(header, 0, 0, 0, 0.55, "BORDER")
+    divider:SetHeight(2)
+    divider:SetPoint("BOTTOMLEFT", 4, 0)
+    divider:SetPoint("BOTTOMRIGHT", -4, 0)
+
+    local crest = CreateFrame("Frame", nil, header)
+    crest:SetSize(44, 44)
+    crest:SetPoint("LEFT", 16, 0)
+    Fill(crest, 0.1, 0.07, 0.04, 1):SetAllPoints()
+    Border(crest, C.brass, 2)
+    local skull = crest:CreateTexture(nil, "ARTWORK")
+    skull:SetPoint("TOPLEFT", 3, -3)
+    skull:SetPoint("BOTTOMRIGHT", -3, 3)
+    skull:SetTexture(ICONS .. "INV_Misc_Bone_HumanSkull_01")
+    skull:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    f.patron = Shadow(Label(header, 16, C.cream))
+    f.patron:SetPoint("TOPLEFT", crest, "TOPRIGHT", 10, -5)
+    f.patron:SetWidth(180)
+    local ps = Label(header, 11, C.muted)
+    ps:SetPoint("TOPLEFT", f.patron, "BOTTOMLEFT", 0, -5)
+    ps:SetText("Patron of The Inn")
+
+    -- The sign, hanging on two chains
+    local sign = CreateFrame("Frame", nil, header)
+    sign:SetSize(SIGN_W, SIGN_H)
+    sign:SetPoint("TOP", 0, -12)
+    for _, x in ipairs({ 44, SIGN_W - 44 }) do
+        local chain = header:CreateTexture(nil, "ARTWORK")
+        chain:SetSize(3, 14)
+        chain:SetPoint("BOTTOM", sign, "TOPLEFT", x, -3)
+        chain:SetColorTexture(0.5, 0.47, 0.42, 1)
+    end
+    local boardTex = sign:CreateTexture(nil, "BACKGROUND")
+    boardTex:SetAllPoints()
+    boardTex:SetTexture(MEDIA .. "SignBoard")
+    for _, side in ipairs({ "LEFT", "RIGHT" }) do
+        local mug = sign:CreateTexture(nil, "ARTWORK")
+        mug:SetSize(26, 26)
+        mug:SetPoint(side, side == "LEFT" and 16 or -16, 0)
+        mug:SetTexture(MEDIA .. "Icon")
+        if side == "RIGHT" then mug:SetTexCoord(1, 0, 0, 1) end
+    end
+    f.signText = sign:CreateFontString(nil, "OVERLAY")
+    Font(f.signText, MORPHEUS, 21)
+    f.signText:SetPoint("CENTER", 0, 5)
+    f.signText:SetTextColor(0.12, 0.06, 0.03)          -- burnt into the wood
+    f.signText:SetShadowColor(1, 0.88, 0.66, 0.35)     -- with a light edge, like a carving
+    f.signText:SetShadowOffset(0, -1)
+    f.signText:SetWordWrap(false)
+    local signSub = sign:CreateFontString(nil, "OVERLAY")
+    Font(signSub, MORPHEUS, 9)
+    signSub:SetPoint("TOP", f.signText, "BOTTOM", 0, -1)
+    signSub:SetText("~ ACHIEVEMENTS & ALE ~")
+    signSub:SetTextColor(0.14, 0.07, 0.03)
+    sign:EnableMouse(true)
+    sign:RegisterForDrag("LeftButton")
+    sign:SetScript("OnDragStart", function() f:StartMoving() end)
+    sign:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
+    sign:SetScript("OnMouseUp", function() -- knock on the sign for a new house rule
+        NewHouseRule()
+        Render()
+    end)
+
+    -- Your bar tab
+    f.points = Shadow(Label(header, 21, C.gold))
+    f.points:SetPoint("TOPRIGHT", -78, -12)
+    f.points:SetJustifyH("RIGHT")
+    local tabLabel = Label(header, 11, C.muted)
+    tabLabel:SetPoint("BOTTOMRIGHT", f.points, "BOTTOMLEFT", -6, 2)
+    tabLabel:SetText("Bar tab")
+    f.progress = GoldBar(header, 150, 8)
+    f.progress:SetPoint("TOPRIGHT", f.points, "BOTTOMRIGHT", 0, -5)
+    f.verdict = Label(header, 10, C.muted)
+    f.verdict:SetPoint("TOPRIGHT", f.progress, "BOTTOMRIGHT", 0, -5)
+    f.verdict:SetJustifyH("RIGHT")
+    f.verdict:SetWidth(VERDICT_W)
+
+    -- Settings (the cog) and close
+    local close = CreateFrame("Button", nil, header, "UIPanelCloseButton")
+    close:SetPoint("TOPRIGHT", -4, -4)
+    f.gear = CreateFrame("Button", nil, header)
+    f.gear:SetSize(24, 24)
+    f.gear:SetPoint("TOPRIGHT", -38, -9)
+    local cog = f.gear:CreateTexture(nil, "ARTWORK")
+    cog:SetAllPoints()
+    cog:SetTexture(ICONS .. "INV_Misc_Gear_01")
+    Border(f.gear, C.brass)
+    local gearHl = f.gear:CreateTexture(nil, "HIGHLIGHT")
+    gearHl:SetAllPoints()
+    gearHl:SetColorTexture(1, 0.82, 0, 0.2)
+    f.gear.tip = "Settings"
+    f.gear:SetScript("OnEnter", RowEnter)
+    f.gear:SetScript("OnLeave", HideTooltip)
+    f.gear:SetScript("OnClick", function() Go(view == "settings" and "home" or "settings") end)
+
+    for key, def in pairs(ROOMS) do def[1](Room(key)) end
+
+    local x = 24
+    for i, def in ipairs(TABS) do
+        tabs[i] = MakeTab(def, x)
+        x = x + def[3] + 4
+    end
+
+    f:SetScript("OnShow", function()
+        NewHouseRule()
+        Render()
+    end)
 end
 
 Render = function()
     if not f or not f:IsShown() then return end
-    HideAll()
     RefreshHeader()
+    for key, room in pairs(rooms) do room.frame:SetShown(key == view) end
     for _, t in ipairs(tabs) do
-        local selected = t.key == view
-        t.line:SetShown(selected)
-        if selected then t.bg:SetVertexColor(1, 0.9, 0.75) else t.bg:SetVertexColor(0.5, 0.45, 0.4) end
-        if selected then t.text:SetTextColor(1, 0.85, 0.3) else t.text:SetTextColor(0.85, 0.8, 0.7) end
+        local on = t.key == view
+        t:SetHeight(on and 44 or 40)
+        if on then
+            t.bg:SetVertexColor(0.8, 0.62, 0.45)
+            t.text:SetTextColor(1, 0.82, 0)
+            BorderColor(t, C.brass)
+        else
+            t.bg:SetVertexColor(0.4, 0.3, 0.22)
+            t.text:SetTextColor(C.tab[1], C.tab[2], C.tab[3])
+            BorderColor(t, C.rim)
+        end
     end
-    f.chalk:SetShown(view == "boards")
-    f.search:SetShown(view == "workshop")
-    if view == "ach" then RenderAchievements()
-    elseif view == "boards" then RenderBoards()
-    elseif view == "chess" then RenderChess()
-    elseif view == "workshop" then RenderWorkshop()
-    elseif view == "settings" then RenderSettings()
-    else RenderFeed() end
+    BorderColor(f.gear, view == "settings" and C.gold or C.brass)
+    local room = rooms[view]
+    if room then ROOMS[view][2](room) end
 end
 
 -- Lots of messages can arrive at once (a login, a wipe), so redraw at most
@@ -1051,224 +2114,9 @@ function UI.Refresh()
     end)
 end
 
+-- The roster changed: everything but the Trophy Wall shows who's online
 function UI.RefreshIfGuildTab()
     if view ~= "ach" then UI.Refresh() end
-end
-
--- ---------------------------------------------------------------------------
--- Main frame
--- ---------------------------------------------------------------------------
-
-local function NewTagline()
-    f.tagline:SetText(string.format(TAGLINES[math.random(#TAGLINES)], InnRef()))
-end
-
-local function MakeTab(def, x)
-    local b = CreateFrame("Button", nil, f)
-    b:SetSize(TAB_W, TAB_H)
-    b:SetPoint("TOPLEFT", x, -TAB_Y)
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints()
-    b.bg:SetTexture(MEDIA .. "Plank")
-    b.hl = b:CreateTexture(nil, "HIGHLIGHT")
-    b.hl:SetAllPoints()
-    b.hl:SetColorTexture(1, 0.82, 0, 0.1)
-    b.line = b:CreateTexture(nil, "ARTWORK")
-    b.line:SetPoint("BOTTOMLEFT")
-    b.line:SetPoint("BOTTOMRIGHT")
-    b.line:SetHeight(2)
-    b.line:SetColorTexture(1, 0.82, 0, 1)
-    b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetSize(16, 16)
-    b.icon:SetPoint("LEFT", 10, 0)
-    b.icon:SetTexture(def.icon)
-    b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    b.text:SetPoint("LEFT", 32, 0)
-    b.text:SetText(def.label)
-    b.text:SetShadowColor(0, 0, 0, 1)
-    b.text:SetShadowOffset(1, -1)
-    b.key = def.key
-    b:SetScript("OnClick", function()
-        view = def.key
-        if view ~= "ach" then ns.RequestRoster() end
-        scroll:SetVerticalScroll(0)
-        Render()
-    end)
-    return b
-end
-
-local function Build()
-    f = Panel(UIParent, "TheInnFrame", MEDIA .. "Wall", { 1, 1, 1, 1 }, { 0.75, 0.6, 0.35 }, DIALOG_EDGE, 32)
-    f:SetSize(W, H)
-    f:SetPoint("CENTER", 0, -20)
-    f:SetFrameStrata("HIGH")
-    f:SetToplevel(true)
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop", f.StopMovingOrSizing)
-    f:SetClampedToScreen(true)
-    f:Hide()
-    tinsert(UISpecialFrames, "TheInnFrame")
-
-    -- Lamplight: a warm glow at the top fading down
-    local warm = f:CreateTexture(nil, "BORDER")
-    warm:SetPoint("TOPLEFT", 11, -11)
-    warm:SetPoint("TOPRIGHT", -11, -11)
-    warm:SetHeight(HEADER_H + 4)
-    warm:SetColorTexture(0.35, 0.18, 0.05, 0.35)
-
-    -- The inn sign, hanging from its bracket above the window
-    f.sign = CreateFrame("Frame", nil, f)
-    f.sign:SetSize(SIGN_W, SIGN_H)
-    f.sign:SetPoint("TOP", f, "TOP", 0, SIGN_RISE)
-    f.sign:SetFrameLevel(f:GetFrameLevel() + 5)
-    f.sign.tex = f.sign:CreateTexture(nil, "ARTWORK")
-    f.sign.tex:SetAllPoints()
-    f.sign.tex:SetTexture(MEDIA .. "Sign")
-    -- The board is the lower two thirds of the sign texture
-    f.signText = f.sign:CreateFontString(nil, "OVERLAY")
-    SignFont(f.signText, 36)
-    f.signText:SetPoint("CENTER", f.sign, "TOP", 0, -SIGN_H * 0.62)
-    f.signText:SetTextColor(0.22, 0.1, 0.03)       -- burnt into the wood
-    f.signText:SetShadowColor(0.85, 0.62, 0.35, 0.7) -- with a light edge, like a carving
-    f.signText:SetShadowOffset(1, -1)
-    f.signSub = f.sign:CreateFontString(nil, "OVERLAY")
-    SignFont(f.signSub, 12)
-    f.signSub:SetPoint("TOP", f.signText, "BOTTOM", 0, -2)
-    f.signSub:SetText("~ Achievements & Ale ~")
-    f.signSub:SetTextColor(0.25, 0.12, 0.04)
-    f.signSub:SetShadowColor(0.85, 0.62, 0.35, 0.6)
-    f.signSub:SetShadowOffset(1, -1)
-    f.sign:EnableMouse(true)
-    f.sign:RegisterForDrag("LeftButton")
-    f.sign:SetScript("OnDragStart", function() f:StartMoving() end)
-    f.sign:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-    f.sign:SetScript("OnMouseUp", function() NewTagline() end) -- knock on the sign for another joke
-
-    -- Left of the sign: the crest, you (the patron), and your guildies
-    local LEFT_W = (W - SIGN_W) / 2 - 26
-    local crest = Panel(f, nil, MEDIA .. "BadgeDisc", { 1, 1, 1, 1 }, C_GOLD, EDGE, 12)
-    crest:SetSize(48, 48)
-    crest:SetPoint("TOPLEFT", 20, -20)
-    crest.icon = crest:CreateTexture(nil, "ARTWORK")
-    crest.icon:SetSize(38, 38)
-    crest.icon:SetPoint("CENTER", 0, 0)
-    crest.icon:SetTexture(ICONS .. "INV_Misc_Bone_HumanSkull_01")
-    f.patron = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    f.patron:SetPoint("TOPLEFT", crest, "TOPRIGHT", 8, -6)
-    f.patron:SetWidth(LEFT_W - 56)
-    f.patron:SetJustifyH("LEFT")
-    f.patron:SetWordWrap(false)
-    f.patronLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.patronLabel:SetPoint("TOPLEFT", f.patron, "BOTTOMLEFT", 0, -3)
-    f.patronLabel:SetText("Patron")
-    f.patronLabel:SetTextColor(0.85, 0.78, 0.62)
-    f.headerTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    f.headerTitle:SetPoint("TOPLEFT", crest, "BOTTOMLEFT", 0, -8)
-    f.headerTitle:SetText("The Inn")
-    f.regulars = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.regulars:SetPoint("TOPLEFT", f.headerTitle, "BOTTOMLEFT", 0, -3)
-    f.regulars:SetWidth(LEFT_W)
-    f.regulars:SetJustifyH("LEFT")
-    f.regulars:SetWordWrap(false)
-    f.regulars:SetTextColor(0.85, 0.78, 0.62)
-
-    -- Right of the sign: your bar tab
-    f.points = f:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
-    f.points:SetPoint("TOPRIGHT", -40, -22)
-    f.pointsLabel = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.pointsLabel:SetPoint("BOTTOMRIGHT", f.points, "BOTTOMLEFT", -6, 2)
-    f.pointsLabel:SetText("Bar tab:")
-    f.pointsLabel:SetTextColor(0.85, 0.78, 0.62)
-    f.progress = Bar(f, 150, 12)
-    f.progress:SetPoint("TOPRIGHT", -40, -54)
-    f.progress.text = f.progress:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.progress.text:SetPoint("CENTER", 0, 0)
-    f.verdict = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    f.verdict:SetPoint("TOPRIGHT", f.progress, "BOTTOMRIGHT", 0, -5)
-
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -6, -6)
-
-    f.tagline = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.tagline:SetPoint("TOP", f, "TOP", 0, -HEADER_H - 2)
-    f.tagline:SetTextColor(0.92, 0.82, 0.62)
-
-    local tabDefs = {
-        { key = "ach",    label = "Trophy Wall",   icon = ICONS .. "INV_Misc_Book_09" },
-        { key = "boards", label = "Scoreboard",    icon = SKULL },
-        { key = "feed",   label = "Tavern Gossip", icon = ICONS .. "INV_Misc_Note_01" },
-        { key = "chess",  label = "Chess",         icon = MEDIA .. "ChessWN" },
-        { key = "workshop", label = "Workshop",    icon = ICONS .. "Trade_BlackSmithing" },
-    }
-    for i, def in ipairs(tabDefs) do tabs[i] = MakeTab(def, 14 + (i - 1) * (TAB_W + 4)) end
-
-    f.side = Panel(f, nil, MEDIA .. "Wall", { 0.55, 0.5, 0.45, 1 }, { 0.3, 0.2, 0.1 }, EDGE, 12)
-    f.side:SetPoint("TOPLEFT", 14, -BODY_TOP)
-    f.side:SetPoint("BOTTOMLEFT", 14, 14)
-    f.side:SetWidth(SIDE_W)
-
-    -- Settings, at the bottom of the sidebar
-    f.settingsButton = CreateFrame("Button", nil, f.side, "UIPanelButtonTemplate")
-    f.settingsButton:SetSize(SIDE_W - 16, 22)
-    f.settingsButton:SetPoint("BOTTOM", 0, 10)
-    f.settingsButton:SetText("Settings")
-    f.settingsButton:SetScript("OnClick", function()
-        view = view == "settings" and "ach" or "settings"
-        scroll:SetVerticalScroll(0)
-        Render()
-    end)
-
-    -- The chalkboard behind the Scoreboard
-    f.chalk = f:CreateTexture(nil, "BORDER")
-    f.chalk:SetTexture(MEDIA .. "Chalkboard")
-    f.chalk:SetPoint("TOPLEFT", LIST_X - 8, -BODY_TOP + 4)
-    f.chalk:SetPoint("BOTTOMRIGHT", -12, 10)
-    f.chalk:Hide()
-
-    f.listTitle = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    f.listTitle:SetPoint("TOPLEFT", LIST_X + 4, -BODY_TOP - 4)
-    f.listTitle:SetShadowColor(0, 0, 0, 1)
-    f.listTitle:SetShadowOffset(1, -1)
-    f.listSub = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    f.listSub:SetPoint("TOPLEFT", f.listTitle, "BOTTOMLEFT", 0, -4)
-    f.listSub:SetTextColor(0.85, 0.8, 0.68)
-
-    -- Recipe search, on the Workshop tab
-    f.search = CreateFrame("EditBox", "TheInnSearch", f, "InputBoxTemplate")
-    f.search:SetSize(170, 20)
-    f.search:SetPoint("TOPRIGHT", -40, -BODY_TOP - 8)
-    f.search:SetAutoFocus(false)
-    f.search:SetMaxLetters(40)
-    f.search.hint = f.search:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    f.search.hint:SetPoint("LEFT", 2, 0)
-    f.search.hint:SetText("Search recipes...")
-    f.search:SetScript("OnTextChanged", function(self)
-        local text = ns.Clean(self:GetText() or "", 40)
-        self.hint:SetShown(text == "")
-        if text == searchText then return end
-        searchText = text
-        workshopWho = nil
-        scroll:SetVerticalScroll(0)
-        Render()
-    end)
-    f.search:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    f.search:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
-    f.search:Hide()
-
-    scroll = CreateFrame("ScrollFrame", "TheInnScroll", f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", LIST_X, -BODY_TOP - 42)
-    scroll:SetPoint("BOTTOMRIGHT", -34, 16)
-    content = CreateFrame("Frame", nil, scroll)
-    content:SetSize(LIST_W, 1)
-    scroll:SetScrollChild(content)
-
-    f:SetScript("OnShow", function()
-        NewTagline()
-        Render()
-    end)
 end
 
 function UI.Toggle()
@@ -1278,8 +2126,19 @@ end
 
 -- For tests
 function UI._widgets()
-    return { frame = f, tabs = tabs, side = sideButtons, ach = achRows, lines = lineRows,
-             settings = f and f.settingsButton, search = f and f.search }
+    local room = rooms[view]
+    local lines = {}
+    for _, list in ipairs(room and room.lists or {}) do
+        for _, r in ipairs(list.rows) do lines[#lines + 1] = r end
+    end
+    return { frame = f, tabs = tabs, view = view, room = room, lines = lines,
+             side = room and room.side and room.side.buttons or {},
+             ach = rooms.ach and rooms.ach.list.rows or {},
+             chips = room and room.chips or {},
+             settings = f and f.gear,
+             search = rooms.workshop and rooms.workshop.search,
+             plaqueSearch = rooms.ach and rooms.ach.search,
+             announce = rooms.feed and rooms.feed.announce }
 end
 
 -- ---------------------------------------------------------------------------

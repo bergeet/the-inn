@@ -204,9 +204,10 @@ function ns.RefreshRoster()
     if n == 0 then return end
     local roster = {}
     for i = 1, n do
-        local name, _, rankIndex, level, _, _, _, _, online, _, class = GetGuildRosterInfo(i)
+        local name, _, rankIndex, level, _, zone, _, _, online, _, class = GetGuildRosterInfo(i)
         if name then
-            roster[ns.NormalizeName(name)] = { rankIndex = rankIndex, level = level, online = online, class = class }
+            if IsSecret(zone) or type(zone) ~= "string" then zone = nil end
+            roster[ns.NormalizeName(name)] = { rankIndex = rankIndex, level = level, online = online, class = class, zone = zone }
         end
     end
     ns.roster = roster

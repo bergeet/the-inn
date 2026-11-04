@@ -57,6 +57,36 @@ local function LatestFeed(c, kind)
     end
 end
 
+-- The tavern window's widgets (fresh: each room has its own rows)
+local function UIW(c) return c.ns.UI._widgets() end
+
+-- Walk into a room by its tab ("home", "ach", "boards", "feed", "chess", "workshop")
+local function Room(c, key)
+    for _, tab in ipairs(UIW(c).tabs) do
+        if tab.key == key then tab:Click() return end
+    end
+    error("no tab " .. key, 2)
+end
+
+-- A shown row in the current room whose text contains `text`
+local function FindRow(c, text)
+    for _, l in ipairs(UIW(c).lines) do
+        if l:IsShown() and (l.text:GetText() or ""):find(text, 1, true) then return l end
+    end
+end
+
+-- Everything the current room shows, one row per line
+local function Shown(c)
+    local out = {}
+    for _, l in ipairs(UIW(c).lines) do
+        if l:IsShown() then
+            out[#out + 1] = (l.text:GetText() or "") .. ((l.head:IsShown() and l.head:GetText()) or "")
+                            .. " | " .. (l.right:GetText() or "") .. (l.btn:IsShown() and (" [" .. l.btn:GetText() .. "]") or "")
+        end
+    end
+    return table.concat(out, "\n")
+end
+
 local function CustomIdByName(c, name)
     local g = c:Guild()
     for id, def in pairs(g.custom) do if def.name == name then return id end end
@@ -171,13 +201,8 @@ test("settings page: buttons switch each option", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
     p.bob:Slash("")
-    local ui = p.bob.ns.UI._widgets()
-    ui.settings:Click()
-    local function Row(label)
-        for _, l in ipairs(ui.lines) do
-            if l:IsShown() and (l.text:GetText() or ""):find(label, 1, true) then return l end
-        end
-    end
+    UIW(p.bob).settings:Click()
+    local function Row(label) return FindRow(p.bob, label) end
     local s = p.bob.ns.settings
     local before = { s.announce, s.toasts, s.othersToasts, s.obituaries, s.sound }
     for _, label in ipairs({ "guild chat", "alert for my unlocks", "guildies' unlocks", "deaths in the gossip", "Play sounds" }) do
@@ -875,8 +900,7 @@ test("chess tab: challenge an online guildie with a click", function()
     local w, p = Guild()
     LoginAll(w, p.ana, p.bob)
     p.ana:Slash("")
-    local ui = p.ana.ns.UI._widgets()
-    ui.tabs[4]:Click()
+    Room(p.ana, "chess")
     local function FindButton(c, label)
         for _, l in ipairs(c.ns.UI._widgets().lines) do
             if l:IsShown() and l.btn:IsShown() and l.btn:GetText() == label then return l end
@@ -887,7 +911,7 @@ test("chess tab: challenge an online guildie with a click", function()
     row.btn:Click()
     w:Advance(1)
     p.bob:Slash("")
-    p.bob.ns.UI._widgets().tabs[4]:Click()
+    Room(p.bob, "chess")
     local accept = FindButton(p.bob, "Accept")
     ok(accept, "Bob sees the challenge in his Chess tab")
     accept.btn:Click()
@@ -1008,10 +1032,10 @@ test("the badge, the tavern and every board render", function()
     LoginAll(w, p.ana, p.bob)
     p.bob:Slash("badge")
     p.bob:Slash("")
-    local ui = p.bob.ns.UI._widgets()
-    ui.tabs[2]:Click()
-    for i = 1, #ui.side do
-        if ui.side[i]:IsShown() then ui.side[i]:Click() end
+    Room(p.bob, "boards")
+    local side = UIW(p.bob).side
+    for i = 1, #side do
+        if side[i]:IsShown() then side[i]:Click() end
     end
     w:Advance(30)
     p.bob:Slash("stats")
@@ -1341,13 +1365,9 @@ test("workshop: collapsed categories don't wipe known recipes", function()
     if w.flavor == "era" then
         ok(mine.partial, "knows the list may be missing something")
         p.bob:Slash("")
-        for _, tab in ipairs(p.bob.ns.UI._widgets().tabs) do if tab.key == "workshop" then tab:Click() end end
+        Room(p.bob, "workshop")
         w:Advance(0.1)
-        local hint = false
-        for _, l in ipairs(p.bob.ns.UI._widgets().lines) do
-            if l:IsShown() and (l.text:GetText() or ""):find("everything expanded", 1, true) then hint = true end
-        end
-        ok(hint, "and says so on the Workshop tab")
+        ok(FindRow(p.bob, "everything expanded"), "and says so on the Workshop tab")
         p.bob:OpenProfession(AlchemyWindow({ flask = true }))
         w:Advance(1)
         ok(not mine.partial, "everything visible again")
@@ -1403,43 +1423,34 @@ test("workshop: the tab lists crafters, recipes, and search finds who can make i
     w:Advance(5)
     local ana = p.ana
     ana:Slash("")
-    local ui = ana.ns.UI._widgets()
-    for _, tab in ipairs(ui.tabs) do if tab.key == "workshop" then tab:Click() end end
+    Room(ana, "workshop")
     w:Advance(0.1)
-    local function Shown()
-        local out = {}
-        for _, l in ipairs(ui.lines) do
-            if l:IsShown() then out[#out + 1] = (l.text:GetText() or "") .. " | " .. (l.right:GetText() or "") end
-        end
-        return table.concat(out, "\n")
-    end
+    local ui = UIW(ana)
     local function Side(label)
-        for _, b in ipairs(ui.side) do
+        for _, b in ipairs(UIW(ana).side) do
             if b:IsShown() and b.label:GetText() == label then return b end
         end
     end
     ok(Side("Alchemy") and Side("Cooking"), "a sidebar entry per profession")
     Side("Alchemy"):Click()
     w:Advance(0.1)
-    ok(Shown():find("Bob", 1, true) and Shown():find("4 recipes", 1, true), "Bob, with his recipe count")
+    ok(Shown(ana):find("Bob", 1, true) and Shown(ana):find("4 recipes", 1, true), "Bob, with his recipe count")
     -- His recipe list
-    for _, l in ipairs(ui.lines) do
-        if l:IsShown() and l.btn:IsShown() then l.btn:Click() break end
-    end
+    FindRow(ana, "Bob").btn:Click()
     w:Advance(0.1)
-    ok(Shown():find("Flask of the Titans", 1, true), "Bob's recipes by name")
+    ok(Shown(ana):find("Flask of the Titans", 1, true), "Bob's recipes by name")
     -- Search
     ui.search:SetText("titans")
     ui.search:GetScript("OnTextChanged")(ui.search, true)
     w:Advance(0.1)
-    local shown = Shown()
+    local shown = Shown(ana)
     ok(shown:find("Flask of the Titans", 1, true) and shown:find("Bob", 1, true), "who can make it:\n" .. shown)
     ok(not shown:find("Healing", 1, true), "only matches")
     eq(#ana.ns.Workshop.Search("potion"), 2, "two potions")
     ui.search:SetText("zzz")
     ui.search:GetScript("OnTextChanged")(ui.search, true)
     w:Advance(0.1)
-    ok(Shown():find("Nobody in the guild", 1, true))
+    ok(Shown(ana):find("Nobody in the guild", 1, true))
     Clean(w)
 end)
 
@@ -1709,21 +1720,28 @@ test("window renders every tab and category", function()
     w:Advance(8)
     for _, c in ipairs({ p.ana, p.bob }) do
         c:Slash("")
-        local ui = c.ns.UI._widgets()
+        local ui = UIW(c)
         local f = ui.frame
         ok(f and f:IsShown(), "window opens")
         for _, tab in ipairs(ui.tabs) do
             tab:Click()
             w:Advance(0.1)
-            -- every sidebar entry in every tab (achievement categories, boards, feed filters)
-            for i = 1, #ui.side do
-                if ui.side[i]:IsShown() then
-                    ui.side[i]:Click()
+            -- every sidebar entry and filter chip in every room
+            local side, chips = UIW(c).side, UIW(c).chips
+            for i = 1, #side do
+                if side[i]:IsShown() then
+                    side[i]:Click()
                     w:Advance(0.1)
                 end
             end
+            for _, chip in ipairs(chips) do
+                chip:Click()
+                w:Advance(0.1)
+            end
         end
-        ui.tabs[1]:Click()
+        UIW(c).settings:Click()
+        w:Advance(0.1)
+        Room(c, "ach")
         for _, r in ipairs(ui.ach) do
             if r:IsShown() then
                 r:GetScript("OnEnter")(r) -- tooltip
@@ -1737,6 +1755,127 @@ test("window renders every tab and category", function()
     p.bob.state.level = 40
     p.bob:Fire("PLAYER_LEVEL_UP", 40)
     w:Advance(30)
+    Clean(w)
+end)
+
+test("rooms: the Common Room shows what's close, the gossip, who's here and the notice board", function()
+    local w, p = Guild()
+    p.bob.state.level = 8 -- 8 of 10 toward the first level plaque
+    LoginAll(w, p.bob)
+    p.bob:Slash("")
+    eq(UIW(p.bob).view, "home", "the window opens in the Common Room")
+    local shown = Shown(p.bob)
+    ok(shown:find("Reach level 10", 1, true) or shown:find("8 / 10", 1, true) or FindRow(p.bob, "level"), "a plaque within reach:\n" .. shown)
+    ok(FindRow(p.bob, "Just you and the barkeep"), "alone at the bar")
+    ok(FindRow(p.bob, "No chess on the go"), "the notice board offers the barkeep")
+    -- Company arrives, and Bob dies (gossip)
+    p.ana:Login()
+    w:Advance(12)
+    p.bob:Die()
+    p.bob.ns.RequestRoster() -- (the real client refreshes the roster when a guildie logs in)
+    w:Advance(2)
+    p.bob.ns.UI.Refresh()
+    w:Advance(0.1)
+    ok(FindRow(p.bob, "Ana"), "Ana is at the bar")
+    ok(FindRow(p.bob, "Orgrimmar"), "with where she is")
+    ok(FindRow(p.bob, "Elwynn Forest"), "last night's gossip has the death")
+    -- A challenge lands on the notice board
+    p.ana:Slash("chess Bob")
+    w:Advance(1)
+    p.bob.ns.UI.Refresh()
+    w:Advance(0.1)
+    local row = FindRow(p.bob, "challenges you")
+    ok(row and row.btn:GetText() == "Accept", "with an Accept button")
+    row.btn:Click()
+    w:Advance(1)
+    p.bob.ns.UI.Refresh()
+    w:Advance(0.1)
+    ok(FindRow(p.bob, "Chess vs"), "then the game")
+    Clean(w)
+end)
+
+test("rooms: Trophy Wall filters and search", function()
+    local w, p = Guild()
+    p.bob.state.level = 24
+    LoginAll(w, p.bob)
+    p.bob:Slash("")
+    Room(p.bob, "ach")
+    local function Pick(label)
+        for _, c in ipairs(UIW(p.bob).chips) do
+            if c.label:GetText() == label then c:Click() return end
+        end
+        error("no chip " .. label)
+    end
+    ok(FindRow(p.bob, "Within reach") and FindRow(p.bob, "Earned") and FindRow(p.bob, "Not yet"), "three sections")
+    Pick("Earned")
+    ok(FindRow(p.bob, "Earned") and not FindRow(p.bob, "Not yet") and not FindRow(p.bob, "Within reach"), "only earned")
+    local earnedRow
+    for _, r in ipairs(UIW(p.bob).ach) do
+        if r:IsShown() and r.def then earnedRow = r break end
+    end
+    ok(earnedRow and earnedRow.right:GetText():find("Today", 1, true), "earned today")
+    Pick("Within reach")
+    ok(FindRow(p.bob, "Within reach") and not FindRow(p.bob, "Earned"), "only the close ones")
+    Pick("All")
+    local box = UIW(p.bob).plaqueSearch
+    box:SetText("zzzz")
+    box:GetScript("OnTextChanged")(box, true)
+    ok(FindRow(p.bob, "engraver is confused"), "nothing matches")
+    box:SetText("")
+    box:GetScript("OnTextChanged")(box, true)
+    ok(FindRow(p.bob, "Earned"), "back to everything")
+    Clean(w)
+end)
+
+test("rooms: the Scoreboard alone and in company, the Gossip board, settings", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob:Slash("")
+    Room(p.bob, "boards")
+    ok(FindRow(p.bob, "top of the board, technically"), "alone: top of the board")
+    ok(FindRow(p.bob, "empty stool"), "and empty stools")
+    eq(p.bob.ns.UI._widgets().room.tally[2]:GetText(), "0", "your tally: deaths")
+    p.ana:Login()
+    p.ana.state.level = 30
+    w:Advance(15)
+    p.bob.ns.UI.Refresh()
+    w:Advance(0.1)
+    ok(FindRow(p.bob, "Overachiever"), "in company: a proper ranking")
+    ok(not FindRow(p.bob, "empty stool"))
+
+    -- Gossip: one note per day, and the guild chat switch
+    p.bob:Die()
+    w:Advance(2)
+    Room(p.bob, "feed")
+    ok(Shown(p.bob):find("Today", 1, true), "today's note")
+    local before = p.bob.ns.settings.announce
+    UIW(p.bob).announce:Click()
+    eq(p.bob.ns.settings.announce, not before, "the switch posts (or stops posting) unlocks")
+
+    -- Settings: window size
+    UIW(p.bob).settings:Click()
+    local row = FindRow(p.bob, "Window size")
+    ok(row, "a size setting")
+    row.btn:Click()
+    eq(p.bob.ns.settings.scale, 1.1, "one step bigger")
+    UIW(p.bob).settings:Click()
+    eq(UIW(p.bob).view, "home", "the cog again goes back to the Common Room")
+    Clean(w)
+end)
+
+test("rooms: the Chess room shows the position from your side", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob:Slash("")
+    Room(p.bob, "chess")
+    local room = UIW(p.bob).room
+    ok(room.title:GetText():find("No game", 1, true))
+    p.bob:Slash("chess solo")
+    w:Advance(1)
+    p.bob.ns.UI.Refresh()
+    w:Advance(0.1)
+    ok(room.title:GetText():find("Practice", 1, true))
+    ok(FindRow(p.bob, "No moves yet") and FindRow(p.bob, "No moves yet").btn:GetText() == "Open board")
     Clean(w)
 end)
 

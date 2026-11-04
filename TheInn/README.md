@@ -14,12 +14,13 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 
 ## The tavern
 
-`/inn` (or `/gach`) opens the tavern. The sign over the door shows your guild's name (knock on it for a new joke), your **bar tab** (points) is on the right, and there are five rooms:
+`/inn` (or `/gach`, or the beer on the minimap) opens the tavern. The sign over the door shows your guild's name (knock on it for a new house rule), your **bar tab** (points) is on the right with how far you are from the next title, and the cog next to it opens **Settings**. You walk between six rooms with the tabs along the bottom edge:
 
-- **Trophy Wall**: your achievements as plaques, by category, with progress bars. Hover one to see which guildmates have it. Hidden ones show `???` and a hint until you earn them.
-- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (by duel rating) and duels fled. Number one on each board gets a title. The duel boards also show your record against each guildmate.
-- **Tavern Gossip**: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries, and guild duel and chess results. Deaths in the same place within a minute are grouped, so a raid wipe is one line.
-- **Chess**: the guildies online with the addon, with their rating and a Challenge button; your current game; and practice against the barkeep.
+- **Common Room** (where the window opens): the plaques you're closest to, last night's gossip, the guildies with the addon (who's online and where), and the notice board with your chess game or a challenge waiting for you.
+- **Trophy Wall**: your achievements as plaques, by category. Filter by earned, not yet, or within reach (closest first), or search by name. Hover one to see which guildies have it. Hidden ones show `???` and a hint until you earn them.
+- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (by duel rating) and duels fled, plus your own tally. Number one on each board gets a title. The duel boards also show your record against each guildmate.
+- **Gossip**: a cork board with a note for each day: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries, and guild duel and chess results. Deaths in the same place within a minute are grouped, so a raid wipe is one line. The switch at the top turns your guild chat posts on or off.
+- **Chess**: your game on the board (click it to play), your rating, the barkeep, and the guildies online with the addon, each with a Challenge button.
 - **Workshop**: every profession in the guild, who has it and at what skill (online guildies first), and the recipes each of them knows. The search box finds a recipe by name and lists who can make it.
 
 **The Workshop.** Skill levels are shared on their own. Recipes are only readable while your profession window is open, so **open each profession window once** (and again after learning new recipes) and the addon shares what's in it a few seconds after you close it. It never opens the window, expands categories or crafts anything for you. If a category in the window is collapsed, its recipes can't be seen: the ones you already shared are kept, and the Workshop tab asks you to open the window with everything expanded to pick up new ones. On Classic Era, Enchanting uses its own (craft) window, which works the same way. Item tooltips also get a "Craftable by: ..." line when a guildie knows a recipe of that name (switch it off in Settings).
@@ -48,7 +49,7 @@ Duels are read from the game's own "X has defeated Y in a duel" message, so a du
 
 Killing blows and deaths by falling, drowning or lava need the combat log. Classic Era gives that to addons. Forever runs on the newer engine, which hides combat data from addons, so if it doesn't provide them those just stay at zero. Honorable kills and PvP rank work on both.
 
-**Settings**: the button at the bottom of the sidebar opens a page with on/off buttons for guild chat posts, alerts, obituaries, the "Craftable by" tooltip line, the minimap button and sounds. Some of them, and a few other things, also work as commands:
+**Settings**: the cog in the header opens a page with on/off buttons for guild chat posts, alerts, obituaries, the "Craftable by" tooltip line, the minimap button and sounds, and the window size (80% to 120%). Some of them, and a few other things, also work as commands:
 
 - `/inn stats` prints your deaths, jumps, duels and PvP record.
 - `/inn announce off|on` stops or starts posting your unlocks in guild chat.
@@ -103,6 +104,15 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.8.0**
+- A new look: a snugger header with a small hanging sign, the rooms behind tabs along the bottom edge, and the game's own fonts and icons throughout. The window is 900×596 and can be scaled from 80% to 120% in Settings.
+- The Common Room, a new first room: the plaques you're closest to, last night's gossip, who's at the bar, and a notice board with your chess game or challenge.
+- Trophy Wall: filters (earned, not yet, within reach) and a search.
+- Scoreboard: your own tally under the board, and a friendlier board when you're the only one on it.
+- Gossip: one note per day on a cork board, and a switch for your guild chat posts.
+- Chess: the current position on the board, next to your rating, the barkeep and the challengers.
+- Settings moved to the cog in the header. This update adds files: restart the game completely after updating.
 
 **0.7.0**
 - The Workshop: a new room with every guildie's professions, skill levels and known recipes, a recipe search ("who can make Flask of the Titans?"), and a "Craftable by" line on item tooltips. Recipes are collected when you open your own profession window, and only new recipes are sent when you learn some.

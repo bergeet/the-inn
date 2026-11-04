@@ -336,6 +336,80 @@ def chalkboard(u, v):
     return tuple(clamp(c + smudge + dust) for c in slate) + (1.0,)
 
 
+def ragged(x, y, w, h, depth, seed):
+    """Distance inside a board or sheet whose edges wobble (negative outside)."""
+    l = x - depth * vnoise(y * 0.08, 1.0, seed)
+    r = (w - x) - depth * vnoise(y * 0.08, 2.0, seed)
+    t = y - depth * vnoise(x * 0.05, 3.0, seed)
+    b = (h - y) - depth * vnoise(x * 0.05, 4.0, seed)
+    return min(l, r, t, b)
+
+
+def sign_board(u, v):
+    """The small hanging sign in the header: a warm board with a dark rim and ragged ends."""
+    x, y = u * 512, v * 128
+    d = ragged(x, y, 512, 128, 7, 61)
+    if d < 0:
+        return (0, 0, 0, 0)
+    col = grain(x, y * 1.6, 63, (0.42, 0.27, 0.13), (0.70, 0.50, 0.27))
+    col = mix(col, (1.0, 0.88, 0.66), 0.10 * (1 - v))  # lamplight from above
+    if d < 5:
+        col = mix(col, (0.13, 0.07, 0.03), 0.85 * (1 - d / 5))
+    return col + (clamp(d / 1.5),)
+
+
+def parchment(u, v):
+    """A pinned note: cream paper, tea-stained, darker and torn at the edges."""
+    x, y = u * 512, v * 256
+    d = ragged(x, y, 512, 256, 5, 71)
+    if d < 0:
+        return (0, 0, 0, 0)
+    stain = fbm(x * 0.006, y * 0.012, 4, 73)
+    col = mix((0.93, 0.86, 0.69), (0.78, 0.64, 0.42), smooth(0.45, 0.9, stain) * 0.8)
+    col = mix(col, (0.55, 0.38, 0.18), smooth(18, 0, d) * 0.55)  # browned edges
+    fibre = 0.025 * (fbm(x * 0.2, y * 0.03, 2, 75) - 0.5)
+    return tuple(clamp(c + fibre) for c in col) + (clamp(d / 1.5),)
+
+
+def cork(u, v):
+    """The gossip board: cork, speckled, in a dark wooden frame."""
+    x, y = u * 512, v * 512
+    edge = min(x, 512 - x, y, 512 - y)
+    if edge < 12:
+        col = grain(x + y, edge * 3, 81, (0.14, 0.08, 0.04), (0.26, 0.16, 0.08))
+        if edge < 2 or edge > 10.5:
+            col = mix(col, (0.03, 0.02, 0.01), 0.75)
+        return col + (1.0,)
+    base = mix((0.36, 0.23, 0.12), (0.50, 0.34, 0.18), fbm(x * 0.03, y * 0.03, 3, 83))
+    h = hash2(int(x / 2), int(y / 2), 85)
+    if h > 0.93:
+        base = mix(base, (0.18, 0.11, 0.05), 0.6)
+    elif h < 0.05:
+        base = mix(base, (0.68, 0.52, 0.32), 0.5)
+    shade = smooth(12, 40, edge)  # shadow under the frame
+    return tuple(c * (0.7 + 0.3 * shade) for c in base) + (1.0,)
+
+
+def corner(u, v):
+    """An iron corner bracket with a rivet, for the window's top-left corner (mirrored in game)."""
+    x, y = u * 64, v * 64
+    arm = sd_box(x, y, 22, 5, 22, 5, 1.5)
+    arm2 = sd_box(x, y, 5, 22, 5, 22, 1.5)
+    d = min(arm, arm2)
+    if d > 1:
+        return (0, 0, 0, 0)
+    t = clamp(0.5 - 0.5 * (x + y) / 64)
+    col = mix((0.13, 0.12, 0.11), (0.33, 0.31, 0.28), t)
+    if d > -1.2:
+        col = (0.05, 0.04, 0.035)
+    r = math.hypot(x - 6, y - 6)
+    if r < 3.4:
+        col = mix((0.94, 0.88, 0.70), (0.45, 0.40, 0.30), clamp(r / 3.4))
+        if r > 2.8:
+            col = (0.07, 0.05, 0.03)
+    return col + (clamp(1 - d),)
+
+
 # ---------------------------------------------------------------------------
 # Achievement alert, in the style of the classic (Wrath-era) one: a dark bar
 # with a gold frame, the icon in a gold square, the points on a shield.
@@ -589,6 +663,10 @@ TEXTURES = [
     ("Plank", 512, 64, plank),
     ("Sign", 512, 256, sign),
     ("Chalkboard", 512, 256, chalkboard),
+    ("SignBoard", 512, 128, sign_board),
+    ("Parchment", 512, 256, parchment),
+    ("Cork", 512, 512, cork),
+    ("Corner", 64, 64, corner),
     ("BadgeDisc", 128, 128, disc),
     ("BadgeGlint", 64, 128, glint),
     ("AlertFrame", 512, 128, alert_frame),
@@ -626,7 +704,7 @@ def main():
     imgs = {}
     for name, w, h, shader in TEXTURES:
         # Big wood textures don't need supersampling; edges of round things do.
-        imgs[name] = render(w, h, shader, ss=1 if name in ("Wall", "Plank", "Chalkboard") else 3)
+        imgs[name] = render(w, h, shader, ss=1 if name in ("Wall", "Plank", "Chalkboard", "Cork", "Parchment", "SignBoard") else 3)
         save_tga(imgs[name], os.path.join(ROOT, name + ".tga"))
         if name == "Icon":  # also as a PNG for the repo's README (GitHub doesn't show TGA)
             docs = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs")
