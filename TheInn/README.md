@@ -106,6 +106,12 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Changes
 
+**0.9.4**
+- New achievements: kill elites alone, kill one that outlevels you, and take down Hogger, Gath'Ilzogg or Mor'Ladim before you're supposed to.
+- Forever: `/inn grant` and `/inn revoke` work with first and last names, the same way as `/w John Doe`.
+- `/inn diag` shows what the game tells the addon, to help track down problems.
+- Hidden achievements' text is now plain text in the addon's files, so reading `Data.lua` will spoil them.
+
 **0.9.3**
 - Forever: PvP rank achievements can be earned. The game now reports PvP stats differently, so your rank was never read, and it was counted as dishonorable kills instead.
 - Forever: PvP ranks show their proper titles on the Scoreboard.
