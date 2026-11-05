@@ -431,7 +431,12 @@ function Client:BuildEnv()
     env.GetUnitSpeed = function() return 0, st.mounted and (st.mountSpeed or 11.2) or 7, 0, 4.7 end
     env.UnitIsAFK = function(unit) return unit == "player" and st.afk == true end
     env.IsFishingLoot = function() return st.fishing == true end
-    env.UnitGUID = function(unit) if unit == "player" then return "Player-1-" .. client.name end end
+    env.UnitGUID = function(unit)
+        if unit == "player" then return "Player-1-" .. client.name end
+        if unit == "target" then return st.targetGUID end
+        if unit == "pet" then return st.petGUID end
+    end
+    env.UnitClassification = function(unit) if unit == "target" then return st.targetClass end end
 
     -- Units: the player, their target, and their group
     local function Group()
@@ -583,7 +588,11 @@ function Client:BuildEnv()
     -- Player
     env.UnitFullName = function(unit) if unit == "player" then return client.name, world.realm end end
     env.GetNormalizedRealmName = function() return world.realm end
-    env.UnitLevel = function(unit) if unit == "player" then return st.level end return 0 end
+    env.UnitLevel = function(unit)
+        if unit == "player" then return st.level end
+        if unit == "target" and st.targetLevel then return st.targetLevel end
+        return 0
+    end
     env.GetMoney = function() return st.money end
     env.C_QuestLog = {}
     if world.flavor ~= "era" then

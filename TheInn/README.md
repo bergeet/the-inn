@@ -36,6 +36,7 @@ Your unlocks are also **posted in guild chat** (a burst of them becomes one line
 - **Milestones**: levels, gold (up to 5,000), quests, logins, Exalted reputations, and "earn N achievements" metas.
 - **Dungeons and Raids**: the final bosses of every vanilla dungeon, and the raid bosses.
 - **Professions**: skill tiers, Cooking, Fishing, First Aid.
+- **Elites and named mobs**: kill elites alone, one that outlevels you, or Hogger, Gath'Ilzogg and Mor'Ladim before you're supposed to.
 - **PvP**: lifetime honorable kills (straight from the game, so they count from before the install), killing blows on players, and highest PvP rank up to rank 14.
 - **Duels**: wins, losses, fleeing, streaks, reaching a 1400 or 1600 duel rating, an arch-nemesis, beating the Guild Master, losing to a lowbie.
 - **Together**: a dungeon boss with five guildmates, a raid boss with ten, guild firsts, waving at and hugging guildmates, and bowing to (or spitting on) the Guild Master.

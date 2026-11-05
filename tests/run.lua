@@ -313,6 +313,49 @@ test("officer-written custom achievements are never posted from the recipient", 
     Clean(w)
 end)
 
+test("/inn diag reports the client's answers and changes nothing else", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob)
+    p.bob.state.hk = 3
+    p.bob.state.highestRank = 6
+    p.bob:Slash("diag")
+    local d = p.bob.ns.Diagnose()
+    eq(d.me, "Bob-Forever")
+    eq(d.unitFullName, "true | Bob | Forever")
+    eq(d.rosterFirstName, "true | Ana-Forever")
+    eq(d.pvpLifetime, w.flavor == "era" and "true | 3 | 0 | 6" or "true | 3 | 6")
+    ok(d.lastAddonSender ~= "nil", "it has heard the guild channel")
+    Clean(w)
+end)
+
+test("two-part names: commands and sync", function()
+    local w, p = Guild()
+    local dee = w:AddPlayer({ name = "Dee Harrow", rank = 3, class = "ROGUE", level = 10 })
+    LoginAll(w, p.ana, dee)
+    eq(dee.ns.me, "Dee Harrow-Forever", "the whole name is the identity")
+    ok(p.ana:ViewOf(dee), "Ana knows Dee by the same name")
+
+    p.ana:Slash("create 10 Well Named | for the test")
+    w:Advance(2)
+    local id = CustomIdByName(p.ana, "Well Named")
+    p.ana:Slash("grant Dee Harrow " .. id)
+    w:Advance(15)
+    ok(dee:Earned(id), "granted by the full name")
+    p.ana:Slash("revoke Dee Harrow " .. id)
+    w:Advance(15)
+    ok(not dee:Earned(id), "revoked by the full name")
+
+    p.ana:Slash("grant dee " .. id)
+    w:Advance(15)
+    ok(not dee:Earned(id), "a first name alone isn't a name, as with /w")
+    ok(p.ana:LogHas("not in your guild roster"), "and the officer is told")
+
+    eq(p.ana.ns.BaseName(dee.ns.me), "Dee Harrow", "the realm comes off, the surname stays")
+    eq(p.ana.ns.SameName("Dee Harrow", dee.ns.me), true)
+    eq(p.ana.ns.SameName("Dee Marsh", dee.ns.me), false, "same first name isn't the same person")
+    Clean(w)
+end)
+
 test("guild chat posts wait until the fight is over", function()
     local w, p = Guild()
     p.bob.state.money = 500000
@@ -677,6 +720,83 @@ test("PvP: an old dishonorable kill stat or achievement is harmless", function()
     p.ana.ns.ApplyStats(p.bob.ns.me, { hk = 3, dk = 9 }, 1)
     eq(p.ana:ViewOf(p.bob).stats.hk, 3, "the rest of a 0.9.2 client's stats still apply")
     eq(p.ana:ViewOf(p.bob).stats.dk, nil, "its dishonorable kills are ignored")
+    Clean(w)
+end)
+
+-- A kill by this client, through whichever route this client's game uses
+local spawn = 0
+local function KillMob(c, npc, opts)
+    opts = opts or {}
+    spawn = spawn + 1
+    local guid = "Creature-0-1-2-3-" .. npc .. "-" .. spawn
+    c.state.targetGUID, c.state.targetClass, c.state.targetLevel = guid, opts.class or "normal", opts.level or 1
+    c:Fire("PLAYER_TARGET_CHANGED")
+    local by = opts.by or c:GUID()
+    if c.world.flavor == "era" then
+        c:CombatLog("PARTY_KILL", "A Mob", { source = by, dest = guid })
+    else
+        c:Fire("PARTY_KILL", by, guid)
+    end
+end
+
+test("kills: elites alone count, outgrown ones and other people's don't", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob.state.level = 20
+    KillMob(p.bob, 100, { class = "elite", level = 17 })
+    eq(p.bob.ns.char.stats.soloElites, 1, "3 levels below still counts")
+    ok(p.bob:Earned("soloElite1"), "Nobody Asked for Help")
+    KillMob(p.bob, 100, { class = "elite", level = 16 })
+    KillMob(p.bob, 100, { class = "normal", level = 20 })
+    KillMob(p.bob, 100, { class = "elite", level = 20, by = "Player-1-Someoneelse" })
+    eq(p.bob.ns.char.stats.soloElites, 1, "too low, not elite, or not my kill")
+    ok(not p.bob:Earned("punchingUp"), "nothing above me yet")
+    KillMob(p.bob, 100, { class = "rareelite", level = 22 })
+    eq(p.bob.ns.char.stats.soloElites, 2)
+    ok(p.bob:Earned("punchingUp"), "Punching Up")
+    p.bob.state.petGUID = "Pet-0-1-2-3-4-5"
+    KillMob(p.bob, 100, { class = "elite", level = 20, by = p.bob.state.petGUID })
+    eq(p.bob.ns.char.stats.soloElites, 3, "a pet's kill is yours")
+    Clean(w)
+end)
+
+test("kills: in a group an elite doesn't count as alone", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob.state.level = 20
+    p.bob.state.party = { "Ana" }
+    KillMob(p.bob, 100, { class = "elite", level = 20 })
+    eq(p.bob.ns.char.stats.soloElites, nil)
+    Clean(w)
+end)
+
+test("kills: Hogger, by level and by group", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob.state.level = 11
+    KillMob(p.bob, 448, { class = "elite", level = 11 })
+    ok(not p.bob:Earned("hoggerEarly") and not p.bob:Earned("hoggerSolo"), "level 11 is too late for both")
+    p.bob.state.level = 10
+    p.bob.state.party = { "Ana" }
+    KillMob(p.bob, 448, { class = "elite", level = 11 })
+    ok(not p.bob:Earned("hoggerSolo"), "not alone")
+    ok(not p.bob:Earned("hoggerEarly"), "level 10 is too late for the group one")
+    p.bob.state.party = nil
+    KillMob(p.bob, 448, { class = "elite", level = 11 })
+    ok(p.bob:Earned("hoggerSolo"), "Hogger Who?")
+    p.bob.state.level = 9
+    p.bob.state.party = { "Ana" }
+    KillMob(p.bob, 448, { class = "elite", level = 11 })
+    ok(p.bob:Earned("hoggerEarly"), "a group is fine for this one")
+    Clean(w)
+end)
+
+test("kills: a secret kill is ignored without errors", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob.ns.Trackers.OnPartyKill(nil, "Creature-0-1-2-3-448-1")
+    p.bob.ns.Trackers.OnPartyKill(p.bob:GUID(), "not-a-creature")
+    eq(p.bob.ns.char.stats.soloElites, nil)
     Clean(w)
 end)
 
@@ -2033,6 +2153,7 @@ local ALLOWED_GLOBALS = {
     "GameTooltip", "BackdropTemplateMixin",              -- tooltips and frame backgrounds
     -- 0.3 trackers: all read-only state...
     "UnitName", "UnitGUID", "UnitExists", "UnitIsPlayer", "UnitIsAFK", "UnitOnTaxi", "GetNumGroupMembers",
+    "UnitClassification", "IsInGroup",                   -- elites killed alone: is it elite, am I grouped
     "IsFalling", "IsSwimming", "IsFlying", "IsMounted", "GetUnitSpeed", "IsFishingLoot",
     "C_Container", "GetContainerNumFreeSlots", "GetContainerNumSlots",
     "GetNumQuestLogEntries", "MAX_QUESTLOG_QUESTS",

@@ -1461,6 +1461,7 @@ handlers[CLEU] = function()
             ns.OnBossKill(nil, destName)
         end
     elseif subEvent == "PARTY_KILL" then
+        if ns.Trackers then ns.Trackers.OnPartyKill(sourceGUID, destGUID) end
         if myGUID and sourceGUID == myGUID and not IsSecret(destGUID) and type(destGUID) == "string"
            and destGUID:find("^Player%-") and ns.ready then
             ns.Bump("killingBlows")
@@ -1473,6 +1474,7 @@ handlers[CLEU] = function()
 end
 
 function handlers.CHAT_MSG_ADDON(prefix, text, channel, sender)
+    ns.lastAddonSender = sender -- shown by /inn diag
     if ns.Comm then ns.Comm.OnMessage(prefix, text, channel, sender) end
 end
 
@@ -1520,6 +1522,51 @@ local HELP = {
 SLASH_GUILDACHIEVEMENTS1 = "/inn"
 SLASH_GUILDACHIEVEMENTS2 = "/gach"
 SLASH_GUILDACHIEVEMENTS3 = "/guildach"
+-- /inn diag: what this client's APIs really return, for fixing the addon.
+-- Forever disables /dump and /run, so this is how to find out. It only reads,
+-- prints the answers and keeps them in the saved data (written on /reload).
+local function DiagShow(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        parts[i] = IsSecret(v) and "<secret>" or tostring(v)
+    end
+    return table.concat(parts, " | ")
+end
+
+function ns.Diagnose()
+    local d = { at = Now(), me = ns.me, lastAddonSender = DiagShow(ns.lastAddonSender) }
+    d.unitFullName = DiagShow(pcall(UnitFullName, "player"))
+    d.unitName = DiagShow(pcall(UnitName, "player"))
+    d.targetName = DiagShow(pcall(UnitName, "target"))
+    d.realm = DiagShow(pcall(GetNormalizedRealmName))
+    d.pvpLifetime = DiagShow(pcall(GetPVPLifetimeStats))
+    d.guildMembers = DiagShow(GetNumGuildMembers and GetNumGuildMembers())
+    local rosterOk, rosterName = pcall(GetGuildRosterInfo, 1)
+    d.rosterFirstName = DiagShow(rosterOk, rosterName)
+    if C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs then
+        local ok, ids = pcall(C_TradeSkillUI.GetAllRecipeIDs)
+        local total, learned = 0, 0
+        if ok and type(ids) == "table" then
+            for _, id in ipairs(ids) do
+                total = total + 1
+                local infoOk, info = pcall(C_TradeSkillUI.GetRecipeInfo, id)
+                if infoOk and type(info) == "table" and info.learned then learned = learned + 1 end
+            end
+        end
+        d.recipes = DiagShow(ok, total, learned)
+    else
+        d.recipes = "no GetAllRecipeIDs"
+    end
+    GuildAchDB.diag = d
+    for _, key in ipairs({ "me", "unitFullName", "unitName", "targetName", "realm", "guildMembers",
+                           "rosterFirstName", "lastAddonSender", "pvpLifetime", "recipes" }) do
+        print("  " .. key .. ": " .. tostring(d[key]))
+    end
+    ns.Print("saved. /reload to write it to disk.")
+    return d
+end
+
 SlashCmdList.GUILDACHIEVEMENTS = function(msg)
     msg = msg or ""
     local cmd, rest = msg:match("^%s*(%S*)%s*(.-)%s*$")
@@ -1576,7 +1623,8 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
         ns.CreateCustom(points, name or body, desc or "")
     elseif cmd == "grant" or cmd == "revoke" then
         if not ns.ready then ns.Print("still loading, try again in a few seconds.") return end
-        local target, id = rest:match("^(%S+)%s+(%S+)$")
+        -- The id is the last word; the name before it can have two parts on Forever
+        local target, id = rest:match("^(.-)%s+(%S+)$")
         if not target then ns.Print("usage: /inn " .. cmd .. " <player> <id>") return end
         if cmd == "grant" then ns.Grant(target, id) else ns.Revoke(target, id) end
     elseif cmd == "delete" then
@@ -1593,6 +1641,8 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
         if not any then ns.Print("no custom achievements yet.") end
     elseif cmd == "debug" then
         ns.debug = not ns.debug; ns.Print("debug " .. (ns.debug and "on" or "off"))
+    elseif cmd == "diag" then
+        ns.Diagnose()
     else
         ns.Print("unknown command. Try /inn help")
     end

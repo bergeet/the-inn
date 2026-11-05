@@ -147,6 +147,56 @@ function on.LOOT_OPENED()
 end
 
 -- ---------------------------------------------------------------------------
+-- Elites and named mobs: killed alone, or before you're supposed to
+-- ---------------------------------------------------------------------------
+
+local ELITE = { elite = true, rareelite = true, worldboss = true }
+local lastTarget, lastKill
+
+-- What the current target is. Remembered, as it may be gone by the time it dies.
+local function NoteTarget()
+    local guid = UnitGUID("target")
+    if type(guid) ~= "string" or IsSecret(guid) then return end
+    local class, level = UnitClassification("target"), UnitLevel("target")
+    if IsSecret(class) or IsSecret(level) then return end
+    lastTarget = { guid = guid, elite = ELITE[class] == true, level = level }
+end
+on.PLAYER_TARGET_CHANGED = NoteTarget
+
+-- Creature-0-server-instance-zone-npcID-spawn
+local function CreatureId(guid)
+    return tonumber(guid:match("^Creature%-[^-]*%-[^-]*%-[^-]*%-[^-]*%-(%d+)"))
+end
+
+local function OnKill(guid)
+    if not Ready() or type(guid) ~= "string" or IsSecret(guid) or guid == lastKill then return end
+    lastKill = guid
+    local myLevel = UnitLevel("player")
+    if type(myLevel) ~= "number" then return end
+    local solo = not IsInGroup()
+
+    local npc = CreatureId(guid)
+    for _, k in ipairs(ns.NAMED_KILLS) do
+        if k.npc == npc and myLevel < k.below and (solo or not k.solo) then ns.Earn(k.id) end
+    end
+
+    NoteTarget()
+    local t = lastTarget
+    if not (solo and t and t.guid == guid and t.elite and type(t.level) == "number") then return end
+    -- A level of -1 means "??", far above you. Elites you've outgrown don't count.
+    if t.level < 0 or t.level >= myLevel - 3 then ns.Bump("soloElites") end
+    if t.level < 0 or t.level >= myLevel + 2 then ns.Earn("punchingUp") end
+end
+
+-- Only your own kills, or your pet's. Forever has this event; Classic Era sends
+-- the same thing through the combat log (see Core.lua).
+function T.OnPartyKill(attacker, target)
+    if IsSecret(attacker) or type(attacker) ~= "string" then return end
+    if attacker == UnitGUID("player") or attacker == UnitGUID("pet") then OnKill(target) end
+end
+on.PARTY_KILL = T.OnPartyKill
+
+-- ---------------------------------------------------------------------------
 -- Hearthstone, flights, mounts
 -- ---------------------------------------------------------------------------
 
