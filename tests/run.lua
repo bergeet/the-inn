@@ -648,21 +648,35 @@ end)
 test("PvP: lifetime honorable kills are credited quietly, new ones announced", function()
     local w, p = Guild()
     p.bob.state.hk = 1500
-    p.bob.state.dk = 1
-    p.bob.state.highestRank = 14 -- rank id 14 = rank 10 on Classic Era
+    p.bob.state.dk = 7 -- Classic Era reports these; The Inn doesn't track them
+    p.bob.state.highestRank = 14 -- rank id 14 = rank 10, on both clients
     LoginAll(w, p.ana, p.bob)
-    for _, id in ipairs({ "hk1", "hk100", "hk1000", "dk1" }) do ok(p.bob:Earned(id), id) end
+    for _, id in ipairs({ "hk1", "hk100", "hk1000" }) do ok(p.bob:Earned(id), id) end
     ok(not p.bob:LogHas("You earned [Body Count]"), "old kills are credited quietly")
     eq(p.ana:ViewOf(p.bob).stats.hk, 1500, "Ana's Honorable Kills board")
-    if w.flavor == "era" then
-        eq(p.bob.ns.char.stats.pvpRank, 10)
-        ok(p.bob:Earned("rank10"), "Survived the Grind")
-    end
+    eq(p.bob.ns.char.stats.pvpRank, 10)
+    ok(p.bob:Earned("rank10"), "Survived the Grind")
+    ok(not p.bob:Earned("rank14"), "the rank isn't read from the wrong value")
+    eq(p.bob.ns.char.stats.dk, nil, "dishonorable kills aren't tracked")
+    eq(p.ana:ViewOf(p.bob).stats.pr, 10, "Ana's PvP Rank board")
+    eq(p.bob.ns.Trackers.RankName(10),
+       w.flavor == "era" and "Rank 10 Title" or "Title of PVP_RANK_14_0", "the rank's title")
     p.bob.state.hk = 5000
     p.bob:Fire("PLAYER_PVP_KILLS_CHANGED")
     w:Advance(3)
     ok(p.bob:Earned("hk5000"), "Honorable Menace")
     ok(p.bob:LogHas("Honorable Menace"), "announced")
+    Clean(w)
+end)
+
+test("PvP: an old dishonorable kill stat or achievement is harmless", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob)
+    local before = p.ana.ns.PointsFor({ hk1 = 1 })
+    eq(p.ana.ns.PointsFor({ hk1 = 1, dk1 = 1 }), before, "a retired achievement earns no points")
+    p.ana.ns.ApplyStats(p.bob.ns.me, { hk = 3, dk = 9 }, 1)
+    eq(p.ana:ViewOf(p.bob).stats.hk, 3, "the rest of a 0.9.2 client's stats still apply")
+    eq(p.ana:ViewOf(p.bob).stats.dk, nil, "its dishonorable kills are ignored")
     Clean(w)
 end)
 
@@ -2024,6 +2038,7 @@ local ALLOWED_GLOBALS = {
     "GetNumQuestLogEntries", "MAX_QUESTLOG_QUESTS",
     "C_Reputation", "GetNumFactions", "GetFactionInfo",
     "GetPVPLifetimeStats", "GetPVPRankInfo",
+    "GetText", "UnitFactionGroup", "UnitSex",            -- PvP rank titles on Forever: reads game strings
     "LOOT_ITEM_SELF", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE",
     -- ...plus post-hooks: our code runs after JumpOrAscendStart / DoEmote /
     -- AbandonQuest and never changes what they do (no taint, no automation)

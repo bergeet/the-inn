@@ -462,9 +462,9 @@ function Client:BuildEnv()
     local function FreeSlots(bag) if bag == 0 then return st.bagFree or 10, 0 end return 0, 0 end
     local function NumSlots(bag) if bag == 0 then return st.bagSlots or 16 end return 0 end
     -- Reputation: st.factions = { standingId, ... }
-    -- PvP: st.hk, st.dk, st.highestRank
-    env.GetPVPLifetimeStats = function() return st.hk or 0, st.dk or 0, st.highestRank or 0 end
+    -- PvP: st.hk, st.dk, st.highestRank. Era returns all three; Forever (1.60.1) has no dishonorable kills.
     if world.flavor == "era" then
+        env.GetPVPLifetimeStats = function() return st.hk or 0, st.dk or 0, st.highestRank or 0 end
         env.GetContainerNumFreeSlots = FreeSlots
         env.GetContainerNumSlots = NumSlots
         env.GetNumQuestLogEntries = function() return st.questLog or 0, st.questLog or 0 end
@@ -476,6 +476,10 @@ function Client:BuildEnv()
         end
         env.GetPVPRankInfo = function(id) if id >= 5 then return "Rank " .. (id - 4) .. " Title", id - 4 end end
     else
+        env.GetPVPLifetimeStats = function() return st.hk or 0, st.highestRank or 0 end
+        env.UnitFactionGroup = function() return "Horde" end
+        env.UnitSex = function() return 2 end
+        env.GetText = function(key) return "Title of " .. key end
         env.C_Container = { GetContainerNumFreeSlots = FreeSlots, GetContainerNumSlots = NumSlots }
         env.C_Reputation = {
             GetNumFactions = function() return #(st.factions or {}) end,

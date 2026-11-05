@@ -36,7 +36,7 @@ Your unlocks are also **posted in guild chat** (a burst of them becomes one line
 - **Milestones**: levels, gold (up to 5,000), quests, logins, Exalted reputations, and "earn N achievements" metas.
 - **Dungeons and Raids**: the final bosses of every vanilla dungeon, and the raid bosses.
 - **Professions**: skill tiers, Cooking, Fishing, First Aid.
-- **PvP**: lifetime honorable kills (straight from the game, so they count from before the install), killing blows on players, highest PvP rank up to rank 14, and one for killing a civilian.
+- **PvP**: lifetime honorable kills (straight from the game, so they count from before the install), killing blows on players, and highest PvP rank up to rank 14.
 - **Duels**: wins, losses, fleeing, streaks, reaching a 1400 or 1600 duel rating, an arch-nemesis, beating the Guild Master, losing to a lowbie.
 - **Together**: a dungeon boss with five guildmates, a raid boss with ten, guild firsts, waving at and hugging guildmates, and bowing to (or spitting on) the Guild Master.
 - **Shenanigans**: jumps (up to 100,000), /dance, /chicken, /flex, fishing, Hearthstone, flights, looting greys, epics and legendaries, mounts, AFK, very long sessions, logging in at 3 in the morning, full bags, a full quest log, abandoning quests.
@@ -104,6 +104,11 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.9.3**
+- Forever: PvP rank achievements can be earned. The game now reports PvP stats differently, so your rank was never read, and it was counted as dishonorable kills instead.
+- Forever: PvP ranks show their proper titles on the Scoreboard.
+- Dishonorable kills are no longer tracked, and "Dishonorable Discharge" is gone on both clients. If you already earned it, its points no longer count.
 
 **0.9.2**
 - The minimap button shows up as soon as you log in, instead of a few seconds later.

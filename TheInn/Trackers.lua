@@ -315,15 +315,23 @@ function T.RankName(number)
         local ok, name = pcall(GetPVPRankInfo, number + 4)
         if ok and type(name) == "string" and name ~= "" then return name end
     end
+    -- Forever has no GetPVPRankInfo: the titles are game strings, looked up
+    -- the way the game's own inspect window does it.
+    if GetText and UnitFactionGroup then
+        local affix = UnitFactionGroup("player") == "Alliance" and "_1" or "_0"
+        local ok, name = pcall(GetText, "PVP_RANK_" .. (number + 4) .. affix, UnitSex and UnitSex("player"))
+        if ok and type(name) == "string" and name ~= "" and not IsSecret(name) then return name end
+    end
     return "Rank " .. number
 end
 
 local function ScanPvP()
     if not GetPVPLifetimeStats then return end
-    local ok, hk, dk, highest = pcall(GetPVPLifetimeStats)
+    -- Classic Era returns kills, dishonorable kills, rank. Forever returns kills, rank.
+    local ok, hk, second, third = pcall(GetPVPLifetimeStats)
     if not ok then return end
+    local highest = third or second
     if type(hk) == "number" and not IsSecret(hk) then ns.SetStat("hk", hk) end
-    if type(dk) == "number" and not IsSecret(dk) then ns.SetStat("dk", dk) end
     if type(highest) == "number" and not IsSecret(highest) then ns.SetStat("pvpRank", T.RankNumber(highest)) end
 end
 on.PLAYER_PVP_KILLS_CHANGED = function() if Ready() then ScanPvP() end end

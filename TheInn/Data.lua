@@ -152,8 +152,6 @@ ns.STATIC = {
     stat("hk1000",  "PvP", "hk", 1000,  15, "Grim Reaper's Intern",       "Earn 1,000 honorable kills.",                     "Ability_DualWield"),
     stat("hk5000",  "PvP", "hk", 5000,  25, "Honorable Menace",           "Earn 5,000 honorable kills. \"Honorable\" is doing a lot of work there.", "Ability_DualWield"),
     stat("hk10000", "PvP", "hk", 10000, 50, "Ten Thousand Tears",         "Earn 10,000 honorable kills.",                    "Ability_DualWield"),
-    stat("dk1",     "PvP", "dk", 1,     5,  H"RGlzaG9ub3JhYmxlIERpc2NoYXJnZQ==",     H"S2lsbCBhIGNpdmlsaWFuLiBUaGUgZ3VhcmRzIHdpbGwgcmVtZW1iZXIgdGhpcy4=", "Ability_Rogue_Disguise",
-         "Some kills cost honor instead of earning it."),
     stat("kb1",     "PvP", "killingBlows", 1,    5,  "Last Hit",             "Land the killing blow on an enemy player.",   "Ability_Warrior_Charge"),
     stat("kb100",   "PvP", "killingBlows", 100,  15, "Finisher",             "Land 100 killing blows on enemy players.",    "Ability_Warrior_Charge"),
     stat("kb1000",  "PvP", "killingBlows", 1000, 25, "Kill Stealer Supreme", "Land 1,000 killing blows on enemy players.",  "Ability_Warrior_Charge"),

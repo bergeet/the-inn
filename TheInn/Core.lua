@@ -397,7 +397,7 @@ end
 -- Short keys used on the guild channel -> character stat fields. These are
 -- the counters guildmates see on the leaderboards.
 ns.STAT_KEYS = { d = "deaths", w = "duelsWon", l = "duelsLost", f = "duelsFled", gw = "gDuelsWon", gl = "gDuelsLost",
-                 j = "jumps", hk = "hk", dk = "dk", kb = "killingBlows", pr = "pvpRank",
+                 j = "jumps", hk = "hk", kb = "killingBlows", pr = "pvpRank",
                  cw = "chessWins", cl = "chessLosses", cd = "chessDraws", ce = "chessElo",
                  dr = "duelElo" }
 -- Counters only go up, so merging keeps the highest value. A chess rating
