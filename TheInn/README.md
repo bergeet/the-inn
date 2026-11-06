@@ -1,14 +1,12 @@
-# The Inn (WoW: Forever and Classic Era)
+# The Inn (WoW: Forever)
 
-Your guild's tavern, with your guild's name on the sign. Around 160 achievements (heroic ones, hidden ones and plenty of dark humor), leaderboards for glory and shame, a classic gold achievement alert for every unlock, the tavern gossip on who died where and who lost to whom, and a workshop that knows who in the guild can craft what. Everything syncs in game between guildmates running the addon. No external app needed.
+Your guild's tavern, with your guild's name on the sign. Around 130 achievements (heroic ones, hidden ones and plenty of dark humor), leaderboards for glory and shame, a classic gold achievement alert for every unlock, the tavern gossip on who died where and who lost to whom, and a workshop that knows who in the guild can craft what. Everything syncs in game between guildmates running the addon. No external app needed.
 
 ## Install
 
-1. Copy the `TheInn` folder into your game's AddOns folder.
-   - Classic Era: `World of Warcraft\_classic_era_\Interface\AddOns\`
-   - WoW: Forever: `World of Warcraft\_forever_\Interface\AddOns\`
+1. Copy the `TheInn` folder into `World of Warcraft\_forever_\Interface\AddOns\`.
 2. Restart the game completely (a `/reload` is not enough when an update adds files), and enable it on the AddOns list.
-3. If it shows as "out of date", tick **Load out of date AddOns**. To fix it for good, type `/dump select(4, GetBuildInfo())` in game and put that number on the `## Interface:` line in `TheInn.toc` (the line lists Classic Era 1.15.9 = 11509 and Forever = 16001).
+3. If it shows as "out of date", tick **Load out of date AddOns**. To fix it for good, type `/dump select(4, GetBuildInfo())` in game and put that number on the `## Interface:` line in `TheInn.toc` (Forever 1.60 is 16001).
 
 Everyone in the guild who wants to show up in the gossip and on the scoreboard needs the addon installed.
 
@@ -18,41 +16,38 @@ Everyone in the guild who wants to show up in the gossip and on the scoreboard n
 
 - **Common Room** (where the window opens): the plaques you're closest to, last night's gossip, the guildies with the addon (who's online and where), and the notice board with your chess game or a challenge waiting for you.
 - **Trophy Wall**: your achievements as plaques, by category. Filter by earned, not yet, or within reach (closest first), or search by name. Hover one to see which guildies have it. Hidden ones show `???` and a hint until you earn them.
-- **Scoreboard**: chalked-up leaderboards for points, deaths, jumps, honorable kills, killing blows, PvP rank, chess, duels won, duels lost, guild duels (by duel rating) and duels fled, plus your own tally. Number one on each board gets a title. The duel boards also show your record against each guildmate.
+- **Scoreboard**: chalked-up leaderboards for points, deaths, honorable kills, killing blows, PvP rank, chess, duels won, duels lost and guild duels (by duel rating). Number one on each board gets a title. Deaths, kills, rank and duels come straight from the game's own statistics. The duel boards also show your record against each guildmate.
 - **Gossip**: a cork board with a note for each day: unlocks (with GUILD FIRST! when nobody in the guild had it yet), obituaries, and guild duel and chess results. Deaths in the same place within a minute are grouped, so a raid wipe is one line. The switch at the top turns your guild chat posts on or off.
 - **Chess**: the lobby. Your current game (with a button into the board window, where you play), your rating, the barkeep, and ways to challenge someone: type a name, challenge your target, or pick from the guildies online.
 - **Workshop**: every profession in the guild, who has it and at what skill (online guildies first), and the recipes each of them knows. The search box finds a recipe by name and lists who can make it. Hover a recipe for the game's own tooltip (with its reagents); click it for a Wowhead link to copy.
 
-**The Workshop.** Skill levels are shared on their own. Recipes are only readable while your profession window is open, so **open each profession window once** (and again after learning new recipes) and the addon shares what's in it a few seconds after you close it. It never opens the window, expands categories or crafts anything for you. If a category in the window is collapsed, its recipes can't be seen: the ones you already shared are kept, and the Workshop tab asks you to open the window with everything expanded to pick up new ones. On Classic Era, Enchanting uses its own (craft) window, which works the same way. Item tooltips also get a "Craftable by: ..." line when a guildie knows a recipe of that name (switch it off in Settings).
+**The Workshop.** Skill levels are shared on their own. Recipes are only readable while your profession window is open, so **open each profession window once** (and again after learning new recipes) and the addon shares what's in it a few seconds after you close it. It never opens the window, expands categories or crafts anything for you. Collapsed categories don't matter: the game lists every recipe either way. Item tooltips also get a "Craftable by: ..." line when a guildie knows a recipe of that name (switch it off in Settings).
 
 **Tavern Chess.** On the **Chess** tab, type a guildie's name, click **Challenge target**, or pick someone from the online list (or type `/inn chess <name>`); they get a popup to accept. A challenge nobody answers within a minute tells you so (they may not have the addon). The board opens for both of you, moves travel as hidden addon whispers, and a game survives logging out (it picks up where you left off when you're both online). Everyone has a rating (Elo, starting at 1200) that goes up and down with each game; the Chess scoreboard ranks by it. Win, lose or draw, it also goes into the gossip. Want to try it with nobody around? `/inn chess barkeep` plays the barkeep (a simple opponent), and `/inn chess solo` lets you move both sides. Practice games don't count. Resigning takes two clicks.
 
 Every unlock shows an **achievement alert** at the bottom of the screen, in the style of the classic Wrath-era one: a gold-framed bar with the icon on the left, the points on a shield on the right, a gold flash and a shine. `/inn badge` shows a test one.
 
-Your unlocks are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. `/inn announce off` turns that off. Custom achievements (named by officers) are never posted from your character, and posts wait until you're out of combat.
+**Guild firsts and big unlocks** (25 points or more) are also **posted in guild chat** (a burst of them becomes one line, at most one line every 10 seconds), so guildmates without the addon get to laugh too. Smaller unlocks only show in the addon. `/inn announce off` turns the posts off. Custom achievements (named by officers) are never posted from your character, and posts wait until you're out of combat. A guild first needs at least two other guildmates running the addon, so a guild that's only just installed it doesn't call everything a first.
 
 ### What there is to earn
 
-- **Milestones**: levels, gold (up to 5,000), quests, logins, Exalted reputations, and "earn N achievements" metas.
-- **Dungeons and Raids**: the final bosses of every vanilla dungeon, and the raid bosses.
-- **Professions**: skill tiers, Cooking, Fishing, First Aid.
-- **Elites and named mobs**: kill elites alone, one that outlevels you, or Hogger, Gath'Ilzogg and Mor'Ladim before you're supposed to.
-- **PvP**: lifetime honorable kills (straight from the game, so they count from before the install), killing blows on players, and highest PvP rank up to rank 14.
-- **Duels**: wins, losses, fleeing, streaks, reaching a 1400 or 1600 duel rating, an arch-nemesis, beating the Guild Master, losing to a lowbie.
+- **Milestones**: levels 10 to 50, gold (up to 5,000), quests, Exalted reputations, and "earn N achievements" metas.
+- **Dungeons and Raids**: the final bosses of every vanilla dungeon, and the raid bosses (Onyxia is one of the game's own achievements).
+- **Professions**: 75 skill, two professions at 300, and Cooking, Fishing and First Aid at 300 (the 150/225/300 tiers are the game's own).
+- **Elites and named mobs**: kill an elite that outlevels you alone, or Hogger, Gath'Ilzogg and Mor'Ladim before you're supposed to.
+- **PvP**: honorable kills and killing blows on players, from the game's own statistics. PvP ranks are the game's own achievements; the Scoreboard still ranks guildies by them.
+- **Duels**: wins, losses, reaching a 1400 or 1600 duel rating, an arch-nemesis, beating the Guild Master, losing to a lowbie.
 - **Together**: a dungeon boss with five guildmates, a raid boss with ten, guild firsts, waving at and hugging guildmates, and bowing to (or spitting on) the Guild Master.
-- **Shenanigans**: jumps (up to 100,000), /dance, /chicken, /flex, fishing, Hearthstone, flights, looting greys, epics and legendaries, mounts, AFK, very long sessions, logging in at 3 in the morning, full bags, a full quest log, abandoning quests.
+- **Shenanigans**: /lol, fishing, Hearthstone, flights, looting epics and legendaries, mounts, logging in at 3 in the morning, full bags, a full quest log, abandoning quests.
 - **Chess**: wins, games played, reaching a 1400 or 1600 rating, Scholar's Mate, checkmating the Guild Master, stalemates, promotions (and losing a few).
-- **Shame**: deaths (up to 250), bad days, dying rich, dying right after a ding, dying from falling, drowning or lava, being broke at level 40, being Hated by a faction.
+- **Shame**: deaths (up to 250), dying rich, dying right after a ding, dying from falling, drowning or lava, being broke at level 40, being Hated by a faction.
 
-The first time you log in on a character, it quietly credits what you have already done (levels, gold, quests, professions, honorable kills, reputation). Deaths, duels, jumps and the other counters start when you install the addon.
+**Counts come from the game.** WoW: Forever keeps statistics for each character (in the Achievements window), and The Inn reads its numbers from there instead of counting them itself: deaths (and by falling, drowning or fire), duels, honorable kills, killing blows, Hearthstone uses, flights, fish, epic and legendary loot, abandoned quests, /lol and exalted factions. Those go back to the character's first day. The addon only counts what only a guild addon can know: duels and chess between guildies, guild firsts, and which guildies you've waved at or hugged. The first time you log in on a character, it quietly credits what you have already done.
 
 Duels are read from the game's own "X has defeated Y in a duel" message, so a duel only counts for players running the addon. Duels between guildies also move a **duel rating** (Elo, starting at 1200), which the Guild duels scoreboard ranks by. Both duelists' addons share their rating from before the duel, so both arrive at the same numbers. Fleeing counts as a loss; duels against strangers don't affect the rating.
 
-Killing blows and deaths by falling, drowning or lava need the combat log. Classic Era gives that to addons. Forever runs on the newer engine, which hides combat data from addons, so if it doesn't provide them those just stay at zero. Honorable kills and PvP rank work on both.
-
 **Settings**: the cog in the header opens a page with on/off buttons for guild chat posts, alerts, obituaries, the "Craftable by" tooltip line, the minimap button and sounds, and the window size (80% to 120%). Some of them, and a few other things, also work as commands:
 
-- `/inn stats` prints your deaths, jumps, duels and PvP record.
 - `/inn announce off|on` stops or starts posting your unlocks in guild chat.
 - `/inn toasts off` turns off the alert for your own unlocks. `/inn others off` does the same for guildmates' unlocks.
 - `/inn obits off` hides guildmates' deaths in the gossip. They still count on the scoreboard.
@@ -78,7 +73,7 @@ Killing blows and deaths by falling, drowning or lava need the combat log. Class
 
 Edit `Data.lua`. Each entry needs a unique `id`. The supported types are listed at the top of the file.
 
-Boss achievements match the encounter name, for example `"Ragnaros"` (English clients), and raid bosses also match by encounter id, which works in every client language. To find the id for a new boss, turn on `/inn debug` and kill it: the addon prints `encounter 672 "Ragnaros" ended, success=1`. On Classic Era the addon also watches the combat log for the boss dying while you're inside an instance, in case a dungeon boss doesn't fire encounter events.
+Boss achievements match the encounter name, for example `"Ragnaros"` (English clients), and raid bosses also match by encounter id, which works in every client language. To find the id for a new boss, turn on `/inn debug` and kill it: the addon prints `encounter 672 "Ragnaros" ended, success=1`.
 
 ## How saving and sync work
 
@@ -87,7 +82,7 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 - **Where it's saved.** WoW writes the addon's SavedVariables when you log out or `/reload` (not continuously, so a crash loses that session):
   - `WTF/Account/<account>/<realm>/<character>/SavedVariables/TheInn.lua`: your character's unlocks and counters (`GuildAchCharDB`). This is the source of truth for you.
   - `WTF/Account/<account>/SavedVariables/TheInn.lua`: your copy of the guild (`GuildAchDB`): guildmates' unlocks and counters, the feed, custom achievements, and your settings.
-- **When you earn something**, your addon sends it on a hidden guild addon channel (prefix `GACH1`). Every guildmate online at the time saves it in their own copy. Counters (deaths, duels, jumps, PvP, chess) are sent the same way, a few seconds after they change.
+- **When you earn something**, your addon sends it on a hidden guild addon channel (prefix `GACH2`). Every guildmate online at the time saves it in their own copy. The leaderboard numbers (the game's deaths, duels, kills and rank, and guild duels and chess) are sent the same way, a few seconds after they change.
 - **When you log in**, you say hello. Online guildmates reply with their own unlocks, counters and professions.
 - **Relay, for guildmates on different schedules.** One online guildmate also lists the offline members it knows about, with a version number for each. You ask for anyone you're missing or have old data for, and it sends them. If Bob plays mornings and you play evenings, you still see Bob's progress as long as someone was online for both of you.
 - **Professions and recipes.** Your hello includes your professions with a version number for each recipe list (one short message, `P`). Guildmates with an older version ask for that list (`J`) and get it (`B`), and when you learn a recipe only the new ones are sent. Offline guildmates' professions and recipes are relayed like everything else.
@@ -97,14 +92,26 @@ There is no server. Every player's own game keeps the data, and the addons tell 
 
 ## Known limits
 
-- **Testing.** Played in game on Classic Era; Forever has only been tested against the simulated WoW API so far. Every change is tested against that simulator (both the Forever and the Classic Era flavors, with several clients) before it reaches the game, and new features like the Workshop haven't been seen in the live client yet. Report any Lua errors with `/inn debug` on.
-- **Professions:** read through the modern profession API on Forever, and from the Character > Skills list on Classic Era. If a skill header there is collapsed, the professions under it aren't seen until it's expanded again (the Workshop keeps showing what it already knew).
+- **Testing.** Every change is tested against a simulated Forever client (with several guildmates) before it reaches the game; the live client is checked by hand (see `docs/live-client-testing.md` in the repository). Report any Lua errors with `/inn debug` on.
 - **Recipes:** only collected while you have your own profession window open. Recipe names in the Workshop come from your own client, so search uses your client's language.
 - **Quests:** the count comes from the client's list of completed quests, which can include a few hidden ones, so it may run slightly ahead of what the quest log shows.
-- **Deaths and duels:** counted only from when the addon is installed. The feed only shows deaths and duels that happened while you (or someone online with you) were around; leaderboard totals catch up through sync either way.
+- **Deaths and duels:** the feed only shows deaths and duels that happened while you (or someone online with you) were around. The leaderboards use the game's own totals, which catch up through sync either way.
 - **Combat restrictions:** Forever blocks some addon traffic inside instances during combat. Messages wait and send afterwards.
 
 ## Changes
+
+**0.10.0**
+- **A clean slate.** Not compatible with 0.9.x, so everyone in the guild updates together. Saved data from 0.9.x (unlocks, settings, the gossip) is cleared on the first login; what the game's statistics show is credited again right away.
+- Counts now come from WoW: Forever's own statistics instead of the addon counting them: deaths (and by falling, drowning or fire), duels, honorable kills, killing blows, Hearthstone, flights, fishing, epic and legendary loot, abandoned quests, /lol and exalted factions. They go back to each character's first day, and the leaderboards show the game's numbers.
+- Achievements for things the game doesn't count are gone: jumps, /dance, /chicken, /flex, /cry, AFK, session length, logins, grey, rare and total loot, fleeing, duel streaks, bad days and solo elites. So are the Jumps and Fled boards, `/inn stats` and the tally under the Scoreboard.
+- Forever's two-part names ("Lil Hjalm"): you're no longer listed twice, as yourself and as a guildmate. Your own hello now also confirms the name the guild knows you by.
+- Deaths by falling, drowning or fire can now be earned (Forever hides the combat log they used to need).
+- **Forever only.** Classic Era support is gone: its old profession, recipe and combat log code went with it, so the Workshop no longer needs collapsed categories expanded.
+- Achievements Forever already has are gone, so they aren't earned twice: PvP ranks, profession tiers 150/225/300, Onyxia and reaching level 60. The game's own achievement window has them.
+- Lighter: the window uses the game's own art (dialog backgrounds, quest parchment, the frame header and the achievement alert); only the chess pieces are the addon's own. The addon went from 6 MB to under 1 MB.
+- Guild chat only gets guild firsts and achievements worth 25 points or more.
+- A guildie's recipes now reach guildmates who are offline even if they log out right after sharing them.
+- A reinstalled character whose old data is being restored by a guildmate no longer shows a fresh 1200 chess or duel rating to the guild in the meantime.
 
 **0.9.4**
 - New achievements: kill elites alone, kill one that outlevels you, and take down Hogger, Gath'Ilzogg or Mor'Ladim before you're supposed to.

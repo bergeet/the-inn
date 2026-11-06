@@ -29,7 +29,40 @@ local BODY_W = W - 2 * PAD               -- 868
 local BODY_H = PANEL_H - BODY_TOP - 16   -- 494
 local SIDE_W = 200
 
-local MEDIA = "Interface\\AddOns\\" .. addonName .. "\\Media\\"
+local MEDIA = "Interface\\AddOns\\" .. addonName .. "\\Media\\" -- (only the chess pieces are the addon's own)
+
+-- The game's own art. Should a file be missing on this client, a plain color
+-- stands in, so nothing ever shows as a missing texture.
+local ART = {
+    dialog    = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    header    = "Interface\\DialogFrame\\UI-DialogBox-Header",
+    parchment = "Interface\\QuestFrame\\QuestBG",
+    mug       = "Interface\\Icons\\INV_Drink_04",
+    alertBg   = "Interface\\AchievementFrame\\UI-Achievement-Alert-Background",
+    alertGlow = "Interface\\AchievementFrame\\UI-Achievement-Alert-Glow",
+    iconFrame = "Interface\\AchievementFrame\\UI-Achievement-IconFrame",
+    shields   = "Interface\\AchievementFrame\\UI-Achievement-Shields",
+}
+UI.ART = ART
+
+-- fallback = { r, g, b, a }; coords = the part of the file to show; tile = repeat it
+local function GameArt(tex, file, fallback, coords, tile)
+    if tile then
+        tex:SetHorizTile(true)
+        tex:SetVertTile(true)
+    end
+    if tex:SetTexture(file, tile and "REPEAT" or nil, tile and "REPEAT" or nil) == false then
+        tex:SetColorTexture(fallback[1], fallback[2], fallback[3], fallback[4] or 1)
+        return false
+    end
+    if coords then tex:SetTexCoord(coords[1], coords[2], coords[3], coords[4]) end
+    return true
+end
+UI.GameArt = GameArt
+
+local WOOD = { 0.45, 0.3, 0.17 }   -- buttons and tabs (tinted per state)
+local PAPER = { 0.86, 0.76, 0.58 }
+local PARCHMENT_COORDS = { 0, 0.586, 0, 0.656 }
 local ICONS = "Interface\\Icons\\"
 local BAR = "Interface\\TargetingFrame\\UI-StatusBar"
 local SKULL = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8"
@@ -104,16 +137,13 @@ local BOARDS = {
       sub = "Ranked by achievement points. Maybe go outside?",
       value = function(m) return (ns.PointsFor(m.earned)) end },
     { key = "deaths", label = "Deaths", icon = SKULL, title = "The Spirit Healer's Regulars", top = "Spirit Healer's Favorite",
-      sub = "Most deaths since installing the addon. Someone has to be number one.",
+      sub = "Most deaths, from the game's own statistics. Someone has to be number one.",
       value = function(m) return m.stats.d or 0 end },
-    { key = "jumps", label = "Jumps", icon = ICONS .. "Ability_Rogue_Sprint", title = "Frequent Hoppers", top = "Certified Kangaroo",
-      sub = "Most jumps. Walking is for quitters.",
-      value = function(m) return m.stats.j or 0 end },
     { key = "hk", label = "Honorable kills", icon = ICONS .. "Ability_DualWield", title = "Body Count", top = "Grim Reaper's Favorite",
-      sub = "Lifetime honorable kills, straight from the game's own records.",
+      sub = "Lifetime honorable kills, from the game's own statistics.",
       value = function(m) return m.stats.hk or 0 end },
     { key = "kb", label = "Killing blows", icon = ICONS .. "Ability_Warrior_Charge", title = "Last Hits", top = "Kill Stealer",
-      sub = "Killing blows on enemy players (where the client allows counting them).",
+      sub = "Killing blows on enemy players, from the game's own statistics.",
       value = function(m) return m.stats.kb or 0 end },
     { key = "rank", label = "PvP rank", icon = ICONS .. "INV_Crown_01", title = "Chain of Command", top = "Warlord of the Bar",
       sub = "Highest PvP rank reached.",
@@ -125,7 +155,7 @@ local BOARDS = {
       text = function(m) return string.format("%s%d|r   %s%d|r W  %s%d|r L  %s%d|r D", GOLD, m.stats.ce or 1200, GREEN,
                                               m.stats.cw or 0, RED, m.stats.cl or 0, GREY, m.stats.cd or 0) end },
     { key = "won", label = "Duels won", icon = ICONS .. "INV_Sword_04", title = "Bullies", top = "Schoolyard Bully", duel = true,
-      sub = "Most duels won, against anyone.",
+      sub = "Most duels won, against anyone (the game's own statistics).",
       value = function(m) return m.stats.w or 0 end },
     { key = "lost", label = "Duels lost", icon = ICONS .. "Ability_Parry", title = "Punching Bags", top = "Professional Punching Bag", duel = true,
       sub = "Most duels lost. Somebody has to make the rest look good.",
@@ -136,9 +166,6 @@ local BOARDS = {
       show = function(m) return (m.stats.gw or 0) + (m.stats.gl or 0) > 0 end,
       text = function(m) return string.format("%s%d|r   %s%d|r W  %s%d|r L", GOLD, m.stats.dr or 1200, GREEN,
                                               m.stats.gw or 0, RED, m.stats.gl or 0) end },
-    { key = "fled", label = "Fled", icon = ICONS .. "Ability_Rogue_Sprint", title = "Tactical Retreats", top = "Fastest Legs in the Guild", duel = true,
-      sub = "Duels abandoned by running away. Strategically.",
-      value = function(m) return m.stats.f or 0 end },
 }
 
 local FEED_FILTERS = {
@@ -150,12 +177,12 @@ local FEED_FILTERS = {
 }
 
 local OBITS = {
-    function(who, zone, n) return string.format("%s died in %s. Death #%d.", who, zone, n) end,
-    function(who, zone, n) return string.format("%s stopped living in %s. (#%d)", who, zone, n) end,
-    function(who, zone, n) return string.format("RIP %s. %s claims another one. (#%d)", who, zone, n) end,
-    function(who, zone, n) return string.format("%s took a dirt nap in %s. (#%d)", who, zone, n) end,
-    function(who, zone, n) return string.format("%s is a ghost in %s. Again. (#%d)", who, zone, n) end,
-    function(who, zone, n) return string.format("A round for %s, who fell in %s. (#%d)", who, zone, n) end,
+    function(who, zone) return string.format("%s died in %s.", who, zone) end,
+    function(who, zone) return string.format("%s stopped living in %s.", who, zone) end,
+    function(who, zone) return string.format("RIP %s. %s claims another one.", who, zone) end,
+    function(who, zone) return string.format("%s took a dirt nap in %s.", who, zone) end,
+    function(who, zone) return string.format("%s is a ghost in %s. Again.", who, zone) end,
+    function(who, zone) return string.format("A round for %s, who fell in %s.", who, zone) end,
 }
 local MASS = {
     function(zone, names) return string.format("Mass casualty event in %s: %s.", zone, names) end,
@@ -382,7 +409,7 @@ local function Chip(parent, w, h)
     b:SetSize(w, h or 24)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
-    b.bg:SetTexture(MEDIA .. "Plank")
+    b.bg:SetColorTexture(WOOD[1], WOOD[2], WOOD[3], 1)
     Border(b, C.rim)
     b.hl = b:CreateTexture(nil, "HIGHLIGHT")
     b.hl:SetAllPoints()
@@ -784,7 +811,7 @@ end
 -- Feed text (shared by the Common Room and the Gossip board)
 -- ---------------------------------------------------------------------------
 
-local function FeedKind(e) return e.kind or "ach" end
+local function FeedKind(e) return e.kind end
 
 -- ink: for the parchment notes (dark names instead of class colors)
 local function FeedText(e, ink)
@@ -793,7 +820,7 @@ local function FeedText(e, ink)
     if kind == "death" then
         local whos = e.whos or {}
         local zone = hl .. ((e.zone and e.zone ~= "") and e.zone or "the wilderness") .. "|r"
-        if #whos <= 1 then return Pick(OBITS, e.ts)(Who(whos[1], ink), zone, e.n or 0) end
+        if #whos <= 1 then return Pick(OBITS, e.ts)(Who(whos[1], ink), zone) end
         return Pick(MASS, e.ts)(zone, NameList(whos, 3, ink))
     elseif kind == "duel" then
         return Pick(e.fled and FLED or DUELS, e.ts)(Who(e.who, ink), Who(e.loser, ink))
@@ -900,7 +927,7 @@ local function BuildHome(room)
     note:SetSize(HOME_RIGHT, BODY_H - BAR_H - GAP)
     local paper = note:CreateTexture(nil, "BACKGROUND")
     paper:SetAllPoints()
-    paper:SetTexture(MEDIA .. "Parchment")
+    GameArt(paper, ART.parchment, PAPER, PARCHMENT_COORDS)
     local pin = note:CreateTexture(nil, "ARTWORK")
     pin:SetSize(14, 14)
     pin:SetPoint("TOP", 0, -5)
@@ -1195,17 +1222,6 @@ end
 -- ---------------------------------------------------------------------------
 
 local PICK_W = 170
-local TALLY = {
-    { "points", function(s) return Commas((ns.PointsFor(ns.char.earned))) end },
-    { "deaths", function(s) return Commas(s.deaths) end },
-    { "jumps", function(s) return Commas(s.jumps) end },
-    { "honorable kills", function(s) return Commas(s.hk) end },
-    { "killing blows", function(s) return Commas(s.killingBlows) end },
-    { "chess rating", function(s) return tostring(s.chessElo or ns.CHESS_START_ELO) end },
-    { "duels won", function(s) return Commas(s.duelsWon) end },
-    { "times fled", function(s) return Commas(s.duelsFled) end },
-}
-
 local function BuildBoards(room)
     local fr = room.frame
     local rb = Shadow(Label(fr, 11, C.muted))
@@ -1218,35 +1234,18 @@ local function BuildBoards(room)
     local slate = CreateFrame("Frame", nil, fr)
     slate:SetPoint("TOPLEFT", bx, 0)
     slate:SetSize(bw, BODY_H)
-    local tex = slate:CreateTexture(nil, "BACKGROUND")
+    Fill(slate, 0.06, 0.08, 0.07, 1, "BACKGROUND"):SetAllPoints() -- solid under the see-through art
+    local tex = slate:CreateTexture(nil, "BACKGROUND", nil, 1)
     tex:SetAllPoints()
-    tex:SetTexture(MEDIA .. "Chalkboard")
+    GameArt(tex, ART.dialog, { 0.11, 0.15, 0.13, 1 }, nil, true)
+    tex:SetVertexColor(0.6, 0.8, 0.7) -- a slate-green tint
     room.title = Label(slate, 21, C.chalk, FRIZ)
     room.title:SetPoint("TOPLEFT", 26, -22)
     room.tagline = Label(slate, 12, C.chalkDim, FRIZ)
     room.tagline:SetPoint("TOPLEFT", room.title, "BOTTOMLEFT", 0, -4)
     room.tagline:SetWidth(bw - 52)
-    room.list = List(room, slate, bw - 40, BODY_H - 82 - 146, 30, "chalk", true)
+    room.list = List(room, slate, bw - 40, BODY_H - 82 - 22, 30, "chalk", true)
     room.list.scroll:SetPoint("TOPLEFT", 22, -82)
-
-    local rule = Fill(slate, 0.93, 0.94, 0.91, 0.22, "ARTWORK")
-    rule:SetHeight(2)
-    rule:SetPoint("BOTTOMLEFT", 22, 138)
-    rule:SetPoint("BOTTOMRIGHT", -22, 138)
-    local tl = Label(slate, 15, C.chalkGold, FRIZ)
-    tl:SetPoint("BOTTOMLEFT", 24, 112)
-    tl:SetText("Your tally")
-    room.tally = {}
-    local colW = (bw - 48) / 4
-    for i = 1, #TALLY do
-        local col, row = (i - 1) % 4, math.floor((i - 1) / 4)
-        local v = Label(slate, 19, C.chalk, FRIZ)
-        v:SetPoint("BOTTOMLEFT", 24 + col * colW, 70 - row * 44)
-        local k = Label(slate, 10, C.chalkDim, FRIZ)
-        k:SetPoint("TOPLEFT", v, "BOTTOMLEFT", 0, -1)
-        k:SetText(TALLY[i][1])
-        room.tally[i] = v
-    end
 end
 
 local function BoardEntries(b)
@@ -1331,9 +1330,6 @@ local function RenderBoards(room)
         end
     end
     Finish(L)
-
-    local s = ns.char.stats
-    for i, t in ipairs(TALLY) do room.tally[i]:SetText(t[2](s)) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1370,7 +1366,7 @@ local function BuildFeed(room)
     cork:SetSize(BODY_W, BODY_H - 34)
     local tex = cork:CreateTexture(nil, "BACKGROUND")
     tex:SetAllPoints()
-    tex:SetTexture(MEDIA .. "Cork")
+    tex:SetColorTexture(0.42, 0.29, 0.17, 1) -- cork
     room.list = List(room, cork, BODY_W - 40, BODY_H - 34 - 30, 28, "ink", true)
     room.list.scroll:SetPoint("TOPLEFT", 18, -15)
     room.notes = {}
@@ -1384,7 +1380,7 @@ local function Note(room, i)
     n:SetFrameLevel(room.list.content:GetFrameLevel() + 1)
     local paper = n:CreateTexture(nil, "BACKGROUND")
     paper:SetAllPoints()
-    paper:SetTexture(MEDIA .. "Parchment")
+    GameArt(paper, ART.parchment, PAPER, PARCHMENT_COORDS)
     for _, side in ipairs({ "TOPLEFT", "TOPRIGHT" }) do
         local pin = n:CreateTexture(nil, "ARTWORK")
         pin:SetSize(12, 12)
@@ -1485,10 +1481,7 @@ local LEFT_W = 360
 -- Who's on your target, if it's a player (name, or nil)
 local function TargetName()
     if not (UnitExists and UnitExists("target") and UnitIsPlayer and UnitIsPlayer("target")) then return nil end
-    local name, realm = UnitName("target")
-    if type(name) ~= "string" or name == "" or ns.IsSecret(name) then return nil end
-    if realm and realm ~= "" then return name .. "-" .. realm end
-    return name
+    return ns.UnitKey("target")
 end
 
 local function BuildChess(room)
@@ -1701,16 +1694,10 @@ local function BuildWorkshop(room)
     room.list.scroll:SetPoint("TOPLEFT", 6, -4)
 end
 
--- A recipe id ("2329", or "i<item id>") as a game link, for its tooltip
-local function RecipeLink(id)
-    local item = id:match("^i(%d+)$")
-    return item and ("item:" .. item) or ("enchant:" .. id)
-end
+-- A recipe id (its spell id) as a game link, for its tooltip
+local function RecipeLink(id) return "enchant:" .. id end
 
-local function WowheadURL(id)
-    local item = id:match("^i(%d+)$")
-    return "https://www.wowhead.com/classic/" .. (item and ("item=" .. item) or ("spell=" .. id))
-end
+local function WowheadURL(id) return "https://www.wowhead.com/forever/spell=" .. id end
 
 -- A little box with a link to copy (the game can't open a browser)
 local copyBox
@@ -1854,9 +1841,6 @@ local function RenderWorkshop(room)
         local mine = ns.char.profs and ns.char.profs[workshopProf]
         if mine and (mine.n or 0) == 0 then
             Add(L, { text = MUTED .. "Open your " .. name .. " window once to share your recipes.|r", noLine = true })
-        elseif mine and mine.partial then
-            Add(L, { text = GOLD .. "Some of your categories were collapsed, so new recipes in them were missed.|r", noLine = true })
-            Add(L, { text = GOLD .. "Open your profession window with everything expanded to update.|r", noLine = true })
         end
     else
         SetHeader("The Workshop", "Who can craft what. Open your profession window to share your recipes.")
@@ -1878,7 +1862,7 @@ local SCALES = { 0.8, 0.9, 1, 1.1, 1.2 }
 
 local SETTINGS = {
     { key = "announce",     label = "Post my unlocks in guild chat",
-      note = "One line per unlock (or burst), at most every 10 seconds." },
+      note = "Guild firsts and unlocks worth 25 points or more, at most one line every 10 seconds." },
     { key = "toasts",       label = "Show the alert for my unlocks" },
     { key = "othersToasts", label = "Show alerts for guildies' unlocks" },
     { key = "obituaries",   label = "Show guildies' deaths in the gossip",
@@ -1997,7 +1981,7 @@ local function MakeTab(def, x)
     b:SetFrameLevel(panel:GetFrameLevel() + 6)
     b.bg = b:CreateTexture(nil, "BACKGROUND")
     b.bg:SetAllPoints()
-    b.bg:SetTexture(MEDIA .. "Plank")
+    b.bg:SetColorTexture(WOOD[1], WOOD[2], WOOD[3], 1)
     Border(b, C.rim, 2)
     b.edges[1]:Hide() -- open at the top, where it joins the window
     b.hl = b:CreateTexture(nil, "HIGHLIGHT")
@@ -2035,26 +2019,17 @@ local function Build()
     panel = CreateFrame("Frame", nil, f)
     panel:SetPoint("TOPLEFT")
     panel:SetSize(W, PANEL_H)
-    local wall = panel:CreateTexture(nil, "BACKGROUND")
+    -- The game's dialog background is see-through: put it on something solid
+    Fill(panel, 0.07, 0.05, 0.03, 1, "BACKGROUND"):SetAllPoints()
+    local wall = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
     wall:SetAllPoints()
-    wall:SetTexture(MEDIA .. "Wall")
-    wall:SetVertexColor(0.92, 0.84, 0.76)
+    GameArt(wall, ART.dialog, { 0.1, 0.07, 0.04, 1 }, nil, true)
+    wall:SetVertexColor(1, 0.86, 0.7) -- warmed up
     Border(panel, { 0.07, 0.04, 0.02, 1 }, 2)
     local brass = CreateFrame("Frame", nil, panel)
     brass:SetPoint("TOPLEFT", 2, -2)
     brass:SetPoint("BOTTOMRIGHT", -2, 2)
     Border(brass, { 0.54, 0.43, 0.2, 1 }, 2)
-    local deco = CreateFrame("Frame", nil, panel)
-    deco:SetAllPoints()
-    deco:SetFrameLevel(panel:GetFrameLevel() + 20)
-    for _, c in ipairs({ { "TOPLEFT", -3, 3, 0, 1, 0, 1 }, { "TOPRIGHT", 3, 3, 1, 0, 0, 1 },
-                         { "BOTTOMLEFT", -3, -3, 0, 1, 1, 0 }, { "BOTTOMRIGHT", 3, -3, 1, 0, 1, 0 } }) do
-        local t = deco:CreateTexture(nil, "OVERLAY")
-        t:SetSize(30, 30)
-        t:SetPoint(c[1], c[2], c[3])
-        t:SetTexture(MEDIA .. "Corner")
-        t:SetTexCoord(c[4], c[5], c[6], c[7])
-    end
 
     -- Header: you, the sign, your bar tab
     local header = CreateFrame("Frame", nil, panel)
@@ -2095,28 +2070,28 @@ local function Build()
         chain:SetPoint("BOTTOM", sign, "TOPLEFT", x, -3)
         chain:SetColorTexture(0.5, 0.47, 0.42, 1)
     end
+    -- The game's own frame header plate
     local boardTex = sign:CreateTexture(nil, "BACKGROUND")
     boardTex:SetAllPoints()
-    boardTex:SetTexture(MEDIA .. "SignBoard")
+    GameArt(boardTex, ART.header, { 0.3, 0.2, 0.1, 1 }, { 0.24, 0.76, 0, 0.6 })
     for _, side in ipairs({ "LEFT", "RIGHT" }) do
         local mug = sign:CreateTexture(nil, "ARTWORK")
-        mug:SetSize(26, 26)
-        mug:SetPoint(side, side == "LEFT" and 16 or -16, 0)
-        mug:SetTexture(MEDIA .. "Icon")
-        if side == "RIGHT" then mug:SetTexCoord(1, 0, 0, 1) end
+        mug:SetSize(24, 24)
+        mug:SetPoint(side, side == "LEFT" and 18 or -18, 2)
+        GameArt(mug, ART.mug, { 0.8, 0.6, 0.2, 1 }, side == "LEFT" and { 0.07, 0.93, 0.07, 0.93 } or { 0.93, 0.07, 0.07, 0.93 })
     end
     f.signText = sign:CreateFontString(nil, "OVERLAY")
     Font(f.signText, MORPHEUS, 21)
     f.signText:SetPoint("CENTER", 0, 5)
-    f.signText:SetTextColor(0.12, 0.06, 0.03)          -- burnt into the wood
-    f.signText:SetShadowColor(1, 0.88, 0.66, 0.35)     -- with a light edge, like a carving
-    f.signText:SetShadowOffset(0, -1)
+    f.signText:SetTextColor(1, 0.82, 0)               -- gold, like the game's frame titles
+    f.signText:SetShadowColor(0, 0, 0, 1)
+    f.signText:SetShadowOffset(1, -1)
     f.signText:SetWordWrap(false)
     local signSub = sign:CreateFontString(nil, "OVERLAY")
     Font(signSub, MORPHEUS, 9)
     signSub:SetPoint("TOP", f.signText, "BOTTOM", 0, -1)
     signSub:SetText("~ ACHIEVEMENTS & ALE ~")
-    signSub:SetTextColor(0.14, 0.07, 0.03)
+    signSub:SetTextColor(0.9, 0.8, 0.6)
     sign:EnableMouse(true)
     sign:RegisterForDrag("LeftButton")
     sign:SetScript("OnDragStart", function() f:StartMoving() end)
@@ -2262,7 +2237,7 @@ local function Anim(group, kind, order, duration, delay)
     return a
 end
 
-local ALERT_W, ALERT_H = 400, 100
+local ALERT_W, ALERT_H = 300, 88 -- the game's own achievement alert size
 
 local function BuildAlert()
     alert = CreateFrame("Frame", "TheInnAlert", UIParent)
@@ -2274,7 +2249,7 @@ local function BuildAlert()
     alert.glow = alert:CreateTexture(nil, "BACKGROUND")
     alert.glow:SetPoint("CENTER", 0, 0)
     alert.glow:SetSize(ALERT_W * 1.08, ALERT_H * 1.08)
-    alert.glow:SetTexture(MEDIA .. "AlertGlow")
+    GameArt(alert.glow, ART.alertGlow, { 1, 0.82, 0, 0.3 }, { 0, 0.78125, 0, 0.66796875 })
     alert.glow:SetBlendMode("ADD")
     alert.glow:SetAlpha(0)
 
@@ -2284,28 +2259,28 @@ local function BuildAlert()
     pcall(alert.body.SetClipsChildren, alert.body, true)
     alert.bg = alert.body:CreateTexture(nil, "BORDER")
     alert.bg:SetAllPoints()
-    alert.bg:SetTexture(MEDIA .. "AlertFrame")
+    GameArt(alert.bg, ART.alertBg, { 0.08, 0.06, 0.03, 0.92 }, { 0, 0.605, 0, 0.703 })
     alert.glint = alert.body:CreateTexture(nil, "ARTWORK")
-    alert.glint:SetSize(36, 70)
-    alert.glint:SetPoint("LEFT", 60, -8)
-    alert.glint:SetTexture(MEDIA .. "BadgeGlint")
+    alert.glint:SetSize(28, 60)
+    alert.glint:SetPoint("LEFT", 45, -6)
+    GameArt(alert.glint, ART.alertGlow, { 1, 1, 1, 0.3 }, { 0.78125, 0.912109375, 0, 0.28125 })
     alert.glint:SetBlendMode("ADD")
     alert.glint:SetAlpha(0)
 
     -- Icon in its gold square, on the left
     alert.icon = alert.body:CreateTexture(nil, "ARTWORK")
-    alert.icon:SetSize(46, 46)
-    alert.icon:SetPoint("LEFT", 36, -9)
+    alert.icon:SetSize(40, 40)
+    alert.icon:SetPoint("LEFT", 26, -8)
     alert.iconFrame = alert.body:CreateTexture(nil, "OVERLAY")
     alert.iconFrame:SetSize(58, 58)
     alert.iconFrame:SetPoint("CENTER", alert.icon, "CENTER", 0, 0)
-    alert.iconFrame:SetTexture(MEDIA .. "AlertIconFrame")
+    GameArt(alert.iconFrame, ART.iconFrame, { 0.8, 0.65, 0.2, 0 }, { 0, 0.5625, 0, 0.5625 })
 
     -- Points on a shield, on the right
     alert.shield = alert.body:CreateTexture(nil, "ARTWORK")
-    alert.shield:SetSize(56, 56)
-    alert.shield:SetPoint("RIGHT", -30, -9)
-    alert.shield:SetTexture(MEDIA .. "AlertShield")
+    alert.shield:SetSize(56, 50)
+    alert.shield:SetPoint("RIGHT", -16, -8)
+    GameArt(alert.shield, ART.shields, { 0.6, 0.45, 0.15, 1 }, { 0, 0.5, 0, 0.45 })
     alert.points = alert.body:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     alert.points:SetPoint("CENTER", alert.shield, "CENTER", 0, 3)
     alert.points:SetTextColor(1, 1, 1)
@@ -2317,12 +2292,12 @@ local function BuildAlert()
     alert.header:SetPoint("TOP", 0, -11)
     alert.name = alert.body:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     alert.name:SetPoint("CENTER", 0, -6)
-    alert.name:SetWidth(ALERT_W - 190)
+    alert.name:SetWidth(ALERT_W - 150)
     alert.name:SetShadowColor(0, 0, 0, 1)
     alert.name:SetShadowOffset(1, -1)
     alert.sub = alert.body:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     alert.sub:SetPoint("TOP", alert.name, "BOTTOM", 0, -3)
-    alert.sub:SetWidth(ALERT_W - 190)
+    alert.sub:SetWidth(ALERT_W - 150)
     alert.sub:SetWordWrap(false)
 
     -- Rise into place and fade in, stay, fade out
@@ -2351,7 +2326,7 @@ local function BuildAlert()
     -- A shine sweeping across
     local shine = alert.glint:CreateAnimationGroup()
     local move = Anim(shine, "Translation", 1, 0.85, 0.4)
-    move:SetOffset(260, 0)
+    move:SetOffset(ALERT_W - 110, 0) -- across the frame, between icon and shield
     local on = Anim(shine, "Alpha", 1, 0.2, 0.4)
     on:SetFromAlpha(0); on:SetToAlpha(0.9)
     local off = Anim(shine, "Alpha", 1, 0.35, 0.9)
@@ -2457,7 +2432,7 @@ function UI.UpdateMinimapButton()
         mini.icon = mini:CreateTexture(nil, "ARTWORK")
         mini.icon:SetSize(20, 20)
         mini.icon:SetPoint("CENTER", 0, 1)
-        mini.icon:SetTexture(MEDIA .. "Icon")
+        GameArt(mini.icon, ART.mug, { 0.8, 0.6, 0.2, 1 }, { 0.07, 0.93, 0.07, 0.93 })
         mini.border = mini:CreateTexture(nil, "OVERLAY")
         mini.border:SetSize(53, 53)
         mini.border:SetPoint("TOPLEFT", 0, 0)

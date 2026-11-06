@@ -14,6 +14,9 @@ local GOLD, GREY = "|cffffd100", "|cff9d9d9d"
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
 local f, squares, promo, prompt
+
+-- The game's own panel backgrounds (only the chess pieces are the addon's own art)
+local PLAIN_BG = "Interface\\Tooltips\\UI-Tooltip-Background" -- white, tinted by the backdrop color
 local selected, targets = nil, {}
 
 local function Panel(parent, name, bgFile, bg, border, edgeFile, edgeSize)
@@ -258,7 +261,7 @@ end
 -- The promotion picker floats above whichever board was clicked
 BuildPromo = function()
     if promo then return end
-    promo = Panel(UIParent, nil, MEDIA .. "Plank", { 0.8, 0.7, 0.55, 1 }, { 0.85, 0.66, 0.25 }, EDGE, 12)
+    promo = Panel(UIParent, nil, PLAIN_BG, { 0.45, 0.32, 0.2, 1 }, { 0.85, 0.66, 0.25 }, EDGE, 12)
     promo:SetSize(4 * 40 + 12, 46)
     promo:SetFrameStrata("DIALOG")
     promo.buttons = {}
@@ -287,7 +290,7 @@ BuildPromo = function()
 end
 
 local function Build()
-    f = Panel(UIParent, "TheInnChess", MEDIA .. "Wall", { 1, 1, 1, 1 }, { 0.75, 0.6, 0.35 }, DIALOG_EDGE, 32)
+    f = Panel(UIParent, "TheInnChess", PLAIN_BG, { 0.12, 0.08, 0.05, 1 }, { 0.75, 0.6, 0.35 }, DIALOG_EDGE, 32) -- solid, not see-through
     f:SetSize(650, 470)
     f:SetPoint("CENTER", 60, 0)
     f:SetFrameStrata("HIGH")
@@ -312,7 +315,7 @@ local function Build()
     close:SetPoint("TOPRIGHT", -6, -6)
 
     -- The board, in a dark wooden frame
-    f.board = Panel(f, nil, MEDIA .. "Plank", { 0.35, 0.22, 0.12, 1 }, { 0.2, 0.12, 0.06 }, EDGE, 14)
+    f.board = Panel(f, nil, PLAIN_BG, { 0.2, 0.12, 0.06, 1 }, { 0.2, 0.12, 0.06 }, EDGE, 14)
     f.board:SetSize(SQ * 8 + 16, SQ * 8 + 16)
     f.board:SetPoint("TOPLEFT", 30, -52)
     squares = {}
@@ -406,7 +409,7 @@ end
 -- A small "X challenges you" box with two buttons.
 function CUI.ShowPrompt(text, onYes, onNo)
     if not prompt then
-        prompt = Panel(UIParent, "TheInnChessPrompt", MEDIA .. "Plank", { 0.7, 0.6, 0.48, 1 }, { 0.85, 0.66, 0.25 }, EDGE, 14)
+        prompt = Panel(UIParent, "TheInnChessPrompt", PLAIN_BG, { 0.35, 0.25, 0.15, 0.95 }, { 0.85, 0.66, 0.25 }, EDGE, 14)
         prompt:SetSize(320, 84)
         prompt:SetPoint("TOP", 0, -160)
         prompt:SetFrameStrata("DIALOG")

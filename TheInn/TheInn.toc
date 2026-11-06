@@ -1,8 +1,8 @@
-## Interface: 11509, 16001
+## Interface: 16001
 ## Title: The Inn
 ## Notes: Your guild's tavern: achievements, a scoreboard, gossip and a workshop, shared with your guildmates. /inn
-## Version: 0.9.4
-## IconTexture: Interface\AddOns\TheInn\Media\Icon
+## Version: 0.10.0
+## IconTexture: Interface\Icons\INV_Drink_04
 ## SavedVariables: GuildAchDB
 ## SavedVariablesPerCharacter: GuildAchCharDB
 

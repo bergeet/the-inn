@@ -2,12 +2,12 @@
 
 # The Inn
 
-**The Inn** is a WoW addon for a guild: shared achievements, leaderboards and a feed of what guildmates have been up to, synced in game between everyone who runs it. It targets WoW: Forever (interface 16001) and Classic Era (11509).
+**The Inn** is a WoW addon for a guild: shared achievements, leaderboards and a feed of what guildmates have been up to, synced in game between everyone who runs it. It is made for WoW: Forever (interface 16001).
 
 <p align="center"><img src="docs/screenshot.png" width="720" alt="The tavern window: the sign, your bar tab, the plaques you're closest to, last night's gossip and the notice board"></p>
 
-- **Achievements**: about 160, plus custom ones officers can create and grant.
-- **Scoreboard**: leaderboards for points, deaths, jumps, PvP, duels and chess.
+- **Achievements**: about 130, plus custom ones officers can create and grant.
+- **Scoreboard**: leaderboards for points, deaths, PvP, duels and chess.
 - **Gossip**: a feed of unlocks, deaths, and duel and chess results.
 - **Workshop**: who in the guild has which profession and can craft which recipe.
 - **Chess**: play a guildie, or practise against the barkeep.
@@ -21,9 +21,9 @@ Install, commands and officer tools are in [TheInn/README.md](TheInn/README.md),
 ```
 TheInn/              the addon itself (this folder is what goes in Interface/AddOns)
 tests/sim.lua        simulated WoW client + guild: timers, roster, addon channel, saved variables
-tests/run.lua        test suite, run against both the Forever and Classic Era API flavors
+tests/run.lua        test suite, run against the simulated Forever client
 scripts/package.sh   runs the tests, then zips the addon into dist/
-scripts/make_textures.py  draws the tavern and achievement-alert art (TheInn/Media/*.tga)
+scripts/make_textures.py  draws the chess pieces (TheInn/Media/*.tga) and docs/icon.png
 ```
 
 ## Develop
@@ -31,24 +31,24 @@ scripts/make_textures.py  draws the tavern and achievement-alert art (TheInn/Med
 Needs LuaJIT (WoW runs Lua 5.1): `brew install luajit`.
 
 ```sh
-luajit tests/run.lua                 # all tests, both flavors
+luajit tests/run.lua                 # all tests
 luajit tests/run.lua revoke          # tests whose name contains "revoke"
 SIM_VERBOSE=1 luajit tests/run.lua   # show every simulated client's chat output
 scripts/package.sh                   # -> dist/TheInn-<version>.zip
-python3 scripts/make_textures.py preview.png   # redraw the art (and a PNG preview)
+python3 scripts/make_textures.py preview.png   # redraw the chess pieces (and a PNG preview)
 ```
 
-The textures are plain math in Python (no image libraries): wood grain from noise, a beveled gold ring, and so on. Edit a shader in the script and rerun it.
+Everything else the window shows is the game's own art (dialog backgrounds, quest parchment, the frame header, the achievement alert), so the addon stays small. If a file is missing on some client, a plain color stands in. The chess pieces have no in-game equivalent: they're plain math in Python (no image libraries). Edit a shape in the script and rerun it.
 
 To test in game without copying files, symlink the addon into the client's AddOns folder and `/reload` after each change:
 
 ```sh
-ln -s "$PWD/TheInn" "/Applications/World of Warcraft/_classic_era_/Interface/AddOns/TheInn"
+ln -s "$PWD/TheInn" "/Applications/World of Warcraft/_forever_/Interface/AddOns/TheInn"
 ```
 
 ## Staying within Blizzard's rules
 
-The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line per unlock, on by default, `/inn announce off` to stop it). The Workshop only reads the profession window while the player has it open. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
+The addon only reads game state, draws its own UI, and talks over the hidden guild addon channel (plus a guild chat line for guild firsts and big unlocks, on by default, `/inn announce off` to stop it). It doesn't count what the game already keeps: deaths, duels, kills and the like are read from WoW: Forever's own statistics. The Workshop only reads the profession window while the player has it open. Never automate input or gameplay, and keep the code readable and free (Blizzard's UI Add-On Development Policy).
 
 The `addon only uses approved game APIs` test enforces this on every file in the TOC. It checks code only: comments and text in strings never count.
 

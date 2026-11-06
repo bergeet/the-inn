@@ -33,6 +33,30 @@ end
 local function BaseName(name) return (name:match("^([^-]+)")) or name end
 ns.BaseName = BaseName
 
+-- Two values from UnitName/UnitFullName as the guild writes the name:
+-- "Name-Realm". WoW: Forever has two-part names ("Lil Hjalm"), and there the
+-- second value is the last name, not the realm. The roster decides when it
+-- can; otherwise a second value that isn't our realm is taken as a last name.
+function ns.JoinName(name, second)
+    if type(name) ~= "string" or name == "" or IsSecret(name) then return nil end
+    if IsSecret(second) or type(second) ~= "string" or second == "" then return ns.NormalizeName(name) end
+    local realm = MyRealm()
+    local twoPart = realm and (name .. " " .. second .. "-" .. realm)
+    local withRealm = name .. "-" .. second
+    if ns.roster then
+        if twoPart and ns.roster[twoPart] then return twoPart end
+        if ns.roster[withRealm] then return withRealm end
+    end
+    if twoPart and second ~= realm then return twoPart end
+    return withRealm
+end
+
+-- A unit's name ("target", "party1"...) the way the guild writes it
+function ns.UnitKey(unit)
+    if unit == "player" then return ns.JoinName(UnitFullName("player")) end
+    return ns.JoinName(UnitName(unit))
+end
+
 function ns.SameName(a, b)
     if not a or not b then return false end
     if a == b then return true end
@@ -71,7 +95,7 @@ end
 -- ---------------------------------------------------------------------------
 
 local DEFAULT_SETTINGS = {
-    announce = true,      -- also post your unlocks as a normal guild chat line
+    announce = true,      -- also post guild firsts and big unlocks as a normal guild chat line
     toasts = true,        -- pop-up for your own unlocks
     othersToasts = true,  -- pop-up for guildmates' unlocks
     sound = true,
@@ -81,29 +105,28 @@ local DEFAULT_SETTINGS = {
 }
 
 -- Counters kept per character (see Data.lua for what each one means)
-local STAT_FIELDS = { "maxMoney", "deaths", "bestDayDeaths", "dayDeaths", "duelsWon", "duelsLost",
-                      "duelsFled", "gDuelsWon", "gDuelsLost" }
+local STAT_FIELDS = { "gDuelsWon", "gDuelsLost" }
+
+-- Saved data from an incompatible version is cleared: 0.10 started over
+-- (counts now come from the game's statistics). Bump to start over again.
+local DATA_VERSION = 3
 
 local function InitDB()
-    GuildAchDB = GuildAchDB or {}
+    if GuildAchDB and GuildAchDB.dataVersion ~= DATA_VERSION then GuildAchDB = nil end
+    if GuildAchCharDB and GuildAchCharDB.dataVersion ~= DATA_VERSION then GuildAchCharDB = nil end
+    GuildAchDB = GuildAchDB or { dataVersion = DATA_VERSION }
     GuildAchDB.guilds = GuildAchDB.guilds or {}
     GuildAchDB.settings = GuildAchDB.settings or {}
     for k, v in pairs(DEFAULT_SETTINGS) do
         if GuildAchDB.settings[k] == nil then GuildAchDB.settings[k] = v end
     end
-    -- 0.3: guild chat announcements became the default
-    if (GuildAchDB.settings.version or 0) < 3 then
-        GuildAchDB.settings.announce = true
-        GuildAchDB.settings.version = 3
-    end
-    GuildAchDB.settings.innName = nil -- custom sign names were removed; the sign shows the guild's name
     -- No saved data for this character (a reinstall, a new computer, a deleted
     -- WTF folder, or simply a new character): try to get it back, first from
     -- the account-wide file, then from guildmates. See "Restore" below.
     local fresh = GuildAchCharDB == nil
                   or ((GuildAchCharDB.rev or 0) == 0 and not GuildAchCharDB.firstScanDone)
     ns.restore = fresh and { state = "pending" } or nil
-    GuildAchCharDB = GuildAchCharDB or {}
+    GuildAchCharDB = GuildAchCharDB or { dataVersion = DATA_VERSION }
     GuildAchCharDB.earned = GuildAchCharDB.earned or {}
     GuildAchCharDB.stats = GuildAchCharDB.stats or {}
     local s = GuildAchCharDB.stats
@@ -248,6 +271,29 @@ function ns.ResolveMember(input)
     return nil
 end
 
+-- Our own hello came back over the guild channel, under the name the guild
+-- knows us by. If that isn't what we guessed (an unusual name format), it
+-- is now, and what we had saved under the guess moves over.
+function ns.FoundMe(name)
+    if not name or name == ns.me then return end
+    local old = ns.me
+    ns.me = name
+    local g = ns.Guild()
+    if g then
+        local was = g.members[old]
+        g.members[old] = nil
+        if was and not g.members[name] then g.members[name] = was end
+        for _, e in ipairs(g.feed) do
+            if e.who == old then e.who = name end
+            if e.loser == old then e.loser = name end
+            for i, w in ipairs(e.whos or {}) do if w == old then e.whos[i] = name end end
+        end
+        ns.MirrorMe(g)
+    end
+    if ns.debug then ns.Print("you're " .. name .. " to the guild (not " .. tostring(old) .. ")") end
+    if ns.UI then ns.UI.Refresh() end
+end
+
 -- ---------------------------------------------------------------------------
 -- Current guild
 -- ---------------------------------------------------------------------------
@@ -273,7 +319,7 @@ function ns.ResolveGuild()
         g = { name = guildName }
         GuildAchDB.guilds[key] = g
     end
-    -- Fill in tables (also upgrades data saved by older versions)
+    -- Fill in tables
     for _, field in ipairs({ "members", "custom", "deleted", "grants", "revoked", "feed" }) do
         g[field] = g[field] or {}
     end
@@ -305,9 +351,8 @@ end
 -- ---------------------------------------------------------------------------
 
 -- Entries: { kind = "ach", who, id, ts }
---          { kind = "death", whos = { name, ... }, zone, n (death number), count, ts }
+--          { kind = "death", whos = { name, ... }, zone, count, ts }
 --          { kind = "duel", who (winner), loser, fled, ts }
--- Entries saved by 0.1.x have no kind and are achievements.
 local FEED_MAX = 100
 
 local function InsertFeed(g, entry)
@@ -323,7 +368,7 @@ end
 
 -- Deaths in the same zone within a minute of each other share one entry,
 -- so a raid wipe reads as one line instead of forty.
-function ns.AddDeathFeed(who, zone, n, ts)
+function ns.AddDeathFeed(who, zone, ts)
     local g = ns.Guild()
     if not g then return end
     ts = ts or Now()
@@ -343,7 +388,7 @@ function ns.AddDeathFeed(who, zone, n, ts)
             return
         end
     end
-    InsertFeed(g, { kind = "death", whos = { who }, zone = zone, n = n, count = 1, ts = ts })
+    InsertFeed(g, { kind = "death", whos = { who }, zone = zone, count = 1, ts = ts })
 end
 
 -- Both duelists report the result; keep one entry.
@@ -394,10 +439,92 @@ end
 -- Shared stats (deaths and duels)
 -- ---------------------------------------------------------------------------
 
--- Short keys used on the guild channel -> character stat fields. These are
--- the counters guildmates see on the leaderboards.
-ns.STAT_KEYS = { d = "deaths", w = "duelsWon", l = "duelsLost", f = "duelsFled", gw = "gDuelsWon", gl = "gDuelsLost",
-                 j = "jumps", hk = "hk", kb = "killingBlows", pr = "pvpRank",
+-- ---------------------------------------------------------------------------
+-- The game's own statistics
+--
+-- WoW: Forever keeps these in its Statistics (in the achievement window),
+-- from the character's first day. The Inn reads them when it needs them and
+-- never counts or stores them itself.
+-- ---------------------------------------------------------------------------
+
+ns.GAME_STATS = {
+    deaths = 60, drownDeaths = 112, fallDeaths = 114, fireDeaths = 115,
+    duelsWon = 319, duelsLost = 320, hk = 588, killingBlows = 1487,
+    abandons = 94, hearths = 353, flights = 349, fishCaught = 1456,
+    lootedEpic = 341, lootedLegendary = 336, lols = 1066, exalted = 377,
+}
+local MOST_GOLD = 334 -- "Most gold ever owned"
+
+-- A statistic as a number. The game gives text: "286", "1,234" (or "1 234",
+-- "1.234" in other languages), "161 (Humanoid)", "--" (never happened), or
+-- money ("29|T...SilverIcon...|t 72|T...CopperIcon...|t").
+-- nil if it can't be read right now (no statistics on this client, a secret
+-- value in combat): unknown, which is not the same as 0.
+local NUM = "(%d[%d,%. \194\160\226\128\175]*)" -- digits with thousands separators (incl. no-break spaces)
+local function Num(str) return str and tonumber((str:gsub("%D", ""))) or 0 end
+local function Statistic(id)
+    if not GetStatistic then return nil end
+    local ok, v = pcall(GetStatistic, id)
+    if not ok or IsSecret(v) then return nil end
+    if type(v) == "number" then return v end
+    if type(v) ~= "string" then return nil end
+    if v:find("Icon", 1, true) then
+        return Num(v:match(NUM .. "|T[^|]*GoldIcon")) * 10000 + Num(v:match(NUM .. "|T[^|]*SilverIcon")) * 100
+               + Num(v:match(NUM .. "|T[^|]*CopperIcon"))
+    end
+    return Num(v:match("^%s*" .. NUM))
+end
+ns.Statistic = Statistic
+
+-- Honorable kills and rank from the PvP lifetime stats
+local function PvPLifetime()
+    if not GetPVPLifetimeStats then return nil, nil end
+    local ok, hk, highest = pcall(GetPVPLifetimeStats)
+    if not ok then return nil, nil end
+    if IsSecret(hk) or type(hk) ~= "number" then hk = nil end
+    if IsSecret(highest) or type(highest) ~= "number" then highest = nil end
+    return hk, highest and ns.Trackers and ns.Trackers.RankNumber(highest) or nil
+end
+
+-- Is this a number the game keeps (so the addon never stores it)?
+function ns.IsGameStat(field) return field == "pvpRank" or ns.GAME_STATS[field] ~= nil end
+
+-- A number the game keeps, or nil if it can't be read right now.
+function ns.GameStat(field)
+    if field == "pvpRank" then
+        local _, rank = PvPLifetime()
+        return rank
+    end
+    local id = ns.GAME_STATS[field]
+    if not id then return nil end
+    local v = Statistic(id)
+    if field == "hk" then
+        -- Two sources for the same number: trust whichever knows more
+        local lifetime = PvPLifetime()
+        if lifetime and (v == nil or lifetime > v) then v = lifetime end
+    end
+    return v
+end
+
+-- The most gold this character has held: the game's statistic, or what's in
+-- the bags right now if that's more (or the client has no statistics).
+function ns.MostGold()
+    return math.max(Statistic(MOST_GOLD) or 0, GetMoney and GetMoney() or 0)
+end
+
+-- Any counter: from the game if it keeps it (nil while it can't be read),
+-- else the addon's own (guild duels, chess and the other things only a
+-- guild addon can know).
+function ns.StatValue(field)
+    if ns.IsGameStat(field) then return ns.GameStat(field) end
+    return ns.char and ns.char.stats[field] or 0
+end
+
+-- Short keys used on the guild channel -> stat fields. These are the numbers
+-- guildmates see on the leaderboards: the game's own (deaths, duels, kills,
+-- rank) and the guild-only ones (guild duels, chess).
+ns.STAT_KEYS = { d = "deaths", w = "duelsWon", l = "duelsLost", gw = "gDuelsWon", gl = "gDuelsLost",
+                 hk = "hk", kb = "killingBlows", pr = "pvpRank",
                  cw = "chessWins", cl = "chessLosses", cd = "chessDraws", ce = "chessElo",
                  dr = "duelElo" }
 -- Counters only go up, so merging keeps the highest value. A chess rating
@@ -410,7 +537,8 @@ for k, field in pairs(ns.STAT_KEYS) do ns.SHARED_FIELDS[field] = k end
 -- Earn any counter achievements this stat has reached.
 function ns.CheckStat(field)
     if not ns.scanned or not ns.char then return end -- the first scan handles everything before it
-    local v = ns.char.stats[field] or 0
+    local v = ns.StatValue(field)
+    if v == nil then return end -- can't be read right now
     local any = false
     for _, d in ipairs(ns.byStat[field] or {}) do
         if v >= d.value and not ns.char.earned[d.id] and ns.Earn(d.id) then any = true end
@@ -418,35 +546,40 @@ function ns.CheckStat(field)
     if any then ns.RequestCheck(1) end -- metas
 end
 
-local function StatChanged(field, lazy)
+local function StatChanged(field)
     ns.CheckStat(field)
-    if ns.SHARED_FIELDS[field] then
-        if lazy then ns.statsDirty = true else ns.Touch() end
-    end
+    if ns.SHARED_FIELDS[field] then ns.Touch() end
 end
 
--- Add to a counter. lazy: shared with the guild in the next batch instead
--- of right away (for things that happen constantly, like jumping).
-function ns.Bump(field, by, lazy)
-    if not ns.char then return end
+-- Add to one of the addon's own counters (never one the game keeps).
+function ns.Bump(field, by)
+    if not ns.char or ns.GAME_STATS[field] then return end
     local s = ns.char.stats
     s[field] = (s[field] or 0) + (by or 1)
-    StatChanged(field, lazy)
+    StatChanged(field)
 end
 
--- Raise a counter to value (never lowers it).
-function ns.SetStat(field, value, lazy)
-    if not ns.char or type(value) ~= "number" then return end
+-- Raise one of the addon's own counters to value (never lowers it).
+function ns.SetStat(field, value)
+    if not ns.char or type(value) ~= "number" or ns.GAME_STATS[field] then return end
     local s = ns.char.stats
     if value > (s[field] or 0) then
         s[field] = value
-        StatChanged(field, lazy)
+        StatChanged(field)
     end
 end
 
+-- What guildmates see of us. A game number that can't be read right now
+-- keeps the value we last shared.
 function ns.SharedStats()
+    local g = ns.Guild()
+    local prev = g and g.members[ns.me] and g.members[ns.me].stats or {}
     local out = {}
-    for k, field in pairs(ns.STAT_KEYS) do out[k] = ns.char.stats[field] or 0 end
+    for k, field in pairs(ns.STAT_KEYS) do
+        local v = ns.StatValue(field)
+        if v == nil then v = prev[k] end
+        out[k] = v
+    end
     out.ce = ns.char.stats.chessElo or ns.CHESS_START_ELO
     out.dr = ns.char.stats.duelElo or ns.CHESS_START_ELO
     return out
@@ -487,7 +620,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Restore: getting a lost install back from guildmates
 --
--- Everything the addon counts itself (deaths, jumps, duels, chess...) lives
+-- Everything the addon counts itself (guild duels, chess...) lives
 -- only in the saved variables. If this character has none, the first hello
 -- also asks "please send me my own data" (A). One guildmate who has a copy
 -- answers with the usual relay messages (N, then M), and for a minute those
@@ -546,7 +679,9 @@ function ns.ApplyRestore(data, source)
     local s = ns.char.stats
     for k, field in pairs(ns.STAT_KEYS) do
         local v = tonumber((data.stats or {})[k])
-        if v and ns.OVERWRITE_STATS[k] then
+        if ns.IsGameStat(field) then
+            -- the game still has these: nothing to restore
+        elseif v and ns.OVERWRITE_STATS[k] then
             if v > 0 then s[field] = v end
         elseif v and v > (s[field] or 0) then
             s[field] = v
@@ -589,6 +724,7 @@ function ns.StartRestore()
             else
                 r.state = "done"
                 ReleaseHold()
+                if r.touched then ns.Touch() end -- nobody had a copy: what we have now is it
             end
             ticker:Cancel()
         elseif r.holding and now >= r.holdUntil then
@@ -639,70 +775,42 @@ end
 -- ---------------------------------------------------------------------------
 
 local function CountCompletedQuests()
-    if C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs then
-        local ok, ids = pcall(C_QuestLog.GetAllCompletedQuestIDs)
-        if ok and type(ids) == "table" then return #ids end
-    end
-    if GetQuestsCompleted then
-        local ok, t = pcall(GetQuestsCompleted)
-        if ok and type(t) == "table" then
-            local n = 0
-            for _ in pairs(t) do n = n + 1 end
-            return n
-        end
-    end
-    return 0
+    local ok, ids = pcall(C_QuestLog.GetAllCompletedQuestIDs)
+    return ok and type(ids) == "table" and #ids or 0
 end
 
 local SECONDARY_BY_NAME = { ["Cooking"] = 185, ["Fishing"] = 356, ["First Aid"] = 129 }
 
--- Returns a list of { name, rank, max, skillLine, primary }, and whether the
--- list is complete (on Classic Era a collapsed header in the Skills pane
--- hides the professions under it).
+-- Returns a list of { name, rank, max, skillLine, primary }
 function ns.GetProfessions()
-    local out, complete = {}, true
-    if GetProfessions and GetProfessionInfo then
-        local slots = { GetProfessions() }
-        local n = select("#", GetProfessions())
-        for i = 1, n do
-            local index = slots[i]
-            if index then
-                local ok, name, _, rank, max, _, _, skillLine = pcall(GetProfessionInfo, index)
-                if ok and name then
-                    out[#out + 1] = { name = name, rank = rank or 0, max = max, skillLine = skillLine,
-                                      primary = (i <= 2) and not SECONDARY_BY_NAME[name] }
-                end
-            end
-        end
-        if #out > 0 then return out, true end
-    end
-    -- Classic Era: professions live in the skill list (Character > Skills)
-    if GetNumSkillLines and GetSkillLineInfo then
-        for i = 1, GetNumSkillLines() do
-            local name, header, expanded, rank, _, _, max, abandonable = GetSkillLineInfo(i)
-            if name and header and not expanded then complete = false end
-            if name and not header then
-                local secondary = SECONDARY_BY_NAME[name]
-                if abandonable or secondary then
-                    out[#out + 1] = { name = name, rank = rank or 0, max = max, skillLine = secondary,
-                                      primary = (abandonable and not secondary) and true or false }
-                end
+    local out = {}
+    local slots = { GetProfessions() }
+    for i = 1, select("#", GetProfessions()) do
+        local index = slots[i]
+        if index then
+            local ok, name, _, rank, max, _, _, skillLine = pcall(GetProfessionInfo, index)
+            if ok and name then
+                out[#out + 1] = { name = name, rank = rank or 0, max = max, skillLine = skillLine,
+                                  primary = (i <= 2) and not SECONDARY_BY_NAME[name] }
             end
         end
     end
-    return out, complete
+    return out
 end
 
 function ns.Snapshot()
     local s = {}
     s.level = UnitLevel("player") or 0
     local money = GetMoney and GetMoney() or 0
-    if money > (ns.char.stats.maxMoney or 0) then ns.char.stats.maxMoney = money end
-    s.maxMoney = ns.char.stats.maxMoney or 0
+    s.maxMoney = ns.MostGold()
     s.quests = CountCompletedQuests()
-    s.deaths = ns.char.stats.deaths or 0
     s.money = money
-    s.stats = ns.char.stats
+    -- Counters, read once per check (the game's statistics, or the addon's own)
+    local cache = {}
+    s.stat = function(field)
+        if cache[field] == nil then cache[field] = ns.StatValue(field) or 0 end
+        return cache[field]
+    end
     s.profs = ns.GetProfessions()
     local _, count = ns.PointsFor(ns.char.earned)
     s.earnedCount = count
@@ -721,7 +829,7 @@ local CHECKERS = {
     quests = function(d, s) return s.quests >= d.value, s.quests, d.value end,
     deaths = function(d, s) return s.deaths >= d.value, s.deaths, d.value end,
     stat   = function(d, s)
-        local v = s.stats[d.stat] or 0
+        local v = s.stat(d.stat)
         return v >= d.value, v, d.value
     end,
     earned_count = function(d, s) return s.earnedCount >= d.value, s.earnedCount, d.value end,
@@ -766,9 +874,9 @@ end
 -- Earning
 -- ---------------------------------------------------------------------------
 
--- Guild chat: one line per unlock, or one line for a burst of them, at most
--- one line every 10 seconds. Written in first person, since the chat shows
--- "[Guild] [YourName]: ..." in front of it.
+-- Guild chat: one line per notable unlock (see Notable), or one line for a
+-- burst of them, at most one line every 10 seconds. Written in first person,
+-- since the chat shows "[Guild] [YourName]: ..." in front of it.
 local SHAME_TAILS = { "Please hold your applause.", "Nobody say anything.", "Yes, really.",
                       "Thoughts and prayers appreciated.", "It's fine. Everything's fine." }
 local announceQueue, announceScheduled, lastAnnounce = {}, false, -100
@@ -825,6 +933,13 @@ local function FlushAnnounce()
     if send and IsInGuild and IsInGuild() then pcall(send, text, "GUILD") end
 end
 
+-- Only guild firsts and big achievements (25 points or more) go to guild chat;
+-- everything else stays in the addon's own feed and alerts.
+local ANNOUNCE_POINTS = 25
+local function Notable(d, first)
+    return d.type ~= "custom" and (first or (d.points or 0) >= ANNOUNCE_POINTS)
+end
+
 local function WillAnnounce()
     return ns.settings.announce and IsInGuild and IsInGuild() and true or false
 end
@@ -833,7 +948,7 @@ local function QueueAnnounce(d, first)
     -- Custom achievements have officer-written names and descriptions. Never
     -- post those from the recipient's character: a player shouldn't "say"
     -- something in guild chat that someone else wrote.
-    if d.type == "custom" or not WillAnnounce() then return end
+    if not Notable(d, first) or not WillAnnounce() then return end
     announceQueue[#announceQueue + 1] = { d = d, first = first }
     if not announceScheduled then
         announceScheduled = true
@@ -865,13 +980,22 @@ function ns.Earn(id, opts)
     local ts = opts.ts or Now()
     ns.char.earned[id] = ts
     ns.ApplyEarned(ns.me, id, ts)
-    ns.Touch()
+    -- A lost install's first scan credits what the game still knows (levels,
+    -- statistics). Those don't raise its rev yet: a newer rev would put its
+    -- fresh numbers (a 1200 rating) over the guild's copy before the restore
+    -- answers. The list still goes out; the rev follows once it's settled.
+    local r = ns.restore
+    if opts.retro and r and r.state ~= "done" then
+        r.touched = true
+    else
+        ns.Touch()
+    end
     if not opts.retro then
         ns.AddFeed(ns.me, id, ts, first)
         ns.Print(string.format("You earned |cffffd100[%s]|r (%d pts)%s", d.name, d.points or 0,
                                first and " |cffffd100- guild first!|r" or ""))
         if ns.UI then ns.UI.Toast(d, nil, first) end
-        local flags = ((WillAnnounce() and d.type ~= "custom") and "a" or "") .. (first and "f" or "")
+        local flags = ((WillAnnounce() and Notable(d, first)) and "a" or "") .. (first and "f" or "")
         if ns.Comm then ns.Comm.Send("E", id, ts, flags) end
         QueueAnnounce(d, first)
         if first then ns.Bump("guildFirsts") end
@@ -910,7 +1034,40 @@ function ns.CheckAll(retro)
         end
     end
     if newly > 0 and ns.UI then ns.UI.Refresh() end
+    ns.ShareIfChanged()
     return newly
+end
+
+-- The game's statistics change without the addon counting anything (a death,
+-- a duel, an honorable kill). When what guildmates see on the leaderboards
+-- no longer matches, send it.
+-- Not while a lost install may still get its data back (see Restore): a
+-- newer rev would put our fresh numbers over the guild's copy of the old ones.
+function ns.ShareIfChanged()
+    local g, r = ns.Guild(), ns.restore
+    if not g or not ns.char or (r and r.state ~= "done") then return end
+    local mine = ns.Member(g, ns.me).stats or {}
+    for k, v in pairs(ns.SharedStats()) do
+        if (mine[k] or 0) ~= v then
+            ns.Touch()
+            return
+        end
+    end
+end
+
+-- The game's statistics move all the time (CRITERIA_UPDATE fires on every
+-- kill and loot): re-check just the achievements built on them, and share
+-- the new numbers.
+local statCheckPending = false
+function ns.RequestStatCheck()
+    if statCheckPending or not ns.ready then return end
+    statCheckPending = true
+    C_Timer.After(2, function()
+        statCheckPending = false
+        for field in pairs(ns.GAME_STATS) do ns.CheckStat(field) end
+        ns.CheckStat("pvpRank")
+        ns.ShareIfChanged()
+    end)
 end
 
 local checkPending = false
@@ -935,9 +1092,8 @@ local function GuildmatesInGroup()
     end
     local mates, others = 0, 0
     for _, unit in ipairs(units) do
-        local name, realm = UnitName(unit)
-        if name and not IsSecret(name) and name ~= "" then
-            if realm and realm ~= "" then name = name .. "-" .. realm end
+        local name = ns.UnitKey(unit)
+        if name then
             if not ns.SameName(name, ns.me) then
                 others = others + 1
                 local mate = ns.rosterReady and ns.ResolveMember(name)
@@ -993,7 +1149,8 @@ function ns.IsRevoked(g, who, id)
     return r ~= nil and r[id] ~= nil
 end
 
--- First scan on a character credits past progress quietly
+-- First scan on a character credits past progress quietly (the game's
+-- statistics go back to the character's first day)
 local function FirstScan()
     if ns.char.firstScanDone then
         ns.CheckAll(false)
@@ -1007,8 +1164,7 @@ local function FirstScan()
 end
 
 local function RequestRoster()
-    if C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster()
-    elseif GuildRoster then GuildRoster() end
+    C_GuildInfo.GuildRoster()
 end
 ns.RequestRoster = RequestRoster
 
@@ -1029,10 +1185,11 @@ local function Startup()
     if ns.ready then return end
     ns.ready = true
     local g = ns.ResolveGuild()
-    -- Read lifetime numbers (honorable kills, reputation...) before the first
-    -- scan, so a new install credits them quietly instead of announcing them.
-    if ns.Trackers then pcall(ns.Trackers.Scan) end
+    -- What's already done (levels, gold, quests, the game's statistics) is
+    -- credited quietly instead of announced.
     FirstScan()
+    -- The game's statistics move on their own: look again now and then
+    if GetStatistic then C_Timer.NewTicker(30, ns.RequestStatCheck) end
     ns.scanned = true
     if ns.Trackers then pcall(ns.Trackers.OnStartup) end
     if ns.ChessGame then pcall(ns.ChessGame.Start) end
@@ -1070,16 +1227,10 @@ end
 
 local lastRevive, lastLevelUp = 0, 0 -- set by events below, read by OnDeath
 
+-- The game counts deaths (and falls, drownings and fire, see ns.GAME_STATS);
+-- The Inn only notices the moment.
 function ns.OnDeath()
-    local s = ns.char.stats
     local now = Now()
-    s.deaths = s.deaths + 1
-    local day = date("%Y-%m-%d", now)
-    if s.dayKey ~= day then s.dayKey, s.dayDeaths = day, 0 end
-    s.dayDeaths = s.dayDeaths + 1
-    if s.dayDeaths > s.bestDayDeaths then s.bestDayDeaths = s.dayDeaths end
-    ns.Touch()
-
     local level = UnitLevel("player") or 0
     if level < 10 then ns.Earn("dieLow") end
     if level >= 60 then ns.Earn("dieMax") end
@@ -1087,22 +1238,13 @@ function ns.OnDeath()
     if lastRevive > 0 and now - lastRevive <= 60 then ns.Earn("dieQuick") end
     if lastLevelUp > 0 and now - lastLevelUp <= 60 then ns.Earn("dieDing") end
     if IsInRaid and IsInRaid() then ns.Earn("dieRaid") end
-    -- What hurt us last, from the combat log (where the client allows it)
-    local env = ns.lastEnvDamage
-    if env and GetTime() - env.at <= 3 then
-        local kind = env.kind:upper()
-        if kind == "FALLING" then ns.Earn("fallDeath")
-        elseif kind == "DROWNING" then ns.Earn("drownDeath")
-        elseif kind == "LAVA" or kind == "FIRE" then ns.Earn("lavaDeath") end
-    end
-    ns.lastEnvDamage = nil
 
     local zone = GetRealZoneText and GetRealZoneText() or ""
     if IsSecret(zone) or type(zone) ~= "string" then zone = "" end
     zone = ns.Clean(zone, 40)
-    ns.AddDeathFeed(ns.me, zone, s.deaths, now)
-    if ns.Comm then ns.Comm.Send("K", s.deaths, now, zone) end
-    ns.RequestCheck(1)
+    ns.AddDeathFeed(ns.me, zone, now)
+    if ns.Comm then ns.Comm.Send("K", now, zone) end
+    ns.RequestCheck(2) -- the game's death statistics
     if ns.UI then ns.UI.Refresh() end
 end
 
@@ -1171,17 +1313,7 @@ function ns.OnDuel(won, opponent, fled)
     if not entry then mate = nil end
     local myLevel = UnitLevel("player") or 0
 
-    if won then
-        s.duelsWon = s.duelsWon + 1
-    else
-        s.duelsLost = s.duelsLost + 1
-        if fled then s.duelsFled = s.duelsFled + 1 end
-    end
-    -- Streaks: positive = wins in a row, negative = losses in a row
-    local streak = s.duelStreak or 0
-    if won then streak = math.max(streak, 0) + 1 else streak = math.min(streak, 0) - 1 end
-    s.duelStreak = streak
-    if streak > 0 then ns.SetStat("bestWinStreak", streak) else ns.SetStat("worstLoseStreak", -streak) end
+    ns.RequestCheck(2) -- the game's duel statistics
     if mate then
         local rec = s.vs[mate] or { w = 0, l = 0 }
         s.vs[mate] = rec
@@ -1378,8 +1510,8 @@ function handlers.ADDON_LOADED(name)
 end
 
 function handlers.PLAYER_LOGIN()
-    local name, realm = UnitFullName("player")
-    if realm and realm ~= "" then ns.me = name .. "-" .. realm else ns.me = ns.NormalizeName(name) end
+    -- Our best guess; the first hello confirms it (see ns.FoundMe)
+    ns.me = ns.UnitKey("player")
     ns.RebuildDefs()
     -- The minimap button needs only the settings, so it's there right away
     -- instead of waiting for Startup and the first scan
@@ -1407,6 +1539,8 @@ function handlers.PLAYER_MONEY() ns.RequestCheck(1) end
 function handlers.QUEST_TURNED_IN() ns.RequestCheck(2) end
 function handlers.SKILL_LINES_CHANGED() ns.RequestCheck(1) end
 function handlers.TRADE_SKILL_LIST_UPDATE() ns.RequestCheck(1) end
+-- Forever: one of the game's statistics or achievements moved
+function handlers.CRITERIA_UPDATE() ns.RequestStatCheck() end
 
 function handlers.PLAYER_DEAD() if ns.char and ns.me then ns.OnDeath() end end
 function handlers.PLAYER_UNGHOST() if ns.ready then lastRevive = Now() end end
@@ -1437,42 +1571,6 @@ end
 
 function handlers.BOSS_KILL(encounterID, encounterName) ns.OnBossKill(encounterID, encounterName) end
 
--- The combat log, wherever the client still gives it to addons. Classic Era
--- does; Forever runs on the newer engine that hides combat data ("secret
--- values"), so there these simply never fire or are ignored. Used for:
---   * killing blows on enemy players
---   * what killed you (falling, drowning, lava)
---   * dungeon bosses that don't fire encounter events (inside instances)
-local CLEU = "COMBAT_LOG_EVENT_UNFILTERED"
-local inInstance, myGUID = false, nil
-
-local function UpdateZone()
-    inInstance = IsInInstance and IsInInstance() and true or false
-    if not myGUID and UnitGUID then myGUID = UnitGUID("player") end
-end
-handlers.PLAYER_ENTERING_WORLD = UpdateZone
-handlers.ZONE_CHANGED_NEW_AREA = UpdateZone
-
-handlers[CLEU] = function()
-    local _, subEvent, _, sourceGUID, _, _, _, destGUID, destName, _, _, envType = CombatLogGetCurrentEventInfo()
-    if IsSecret(subEvent) then return end
-    if subEvent == "UNIT_DIED" then
-        if inInstance and not IsSecret(destName) and type(destName) == "string" and ns.bossIndex[destName:lower()] then
-            ns.OnBossKill(nil, destName)
-        end
-    elseif subEvent == "PARTY_KILL" then
-        if ns.Trackers then ns.Trackers.OnPartyKill(sourceGUID, destGUID) end
-        if myGUID and sourceGUID == myGUID and not IsSecret(destGUID) and type(destGUID) == "string"
-           and destGUID:find("^Player%-") and ns.ready then
-            ns.Bump("killingBlows")
-        end
-    elseif subEvent == "ENVIRONMENTAL_DAMAGE" then
-        if myGUID and destGUID == myGUID and type(envType) == "string" and not IsSecret(envType) then
-            ns.lastEnvDamage = { kind = envType, at = GetTime() }
-        end
-    end
-end
-
 function handlers.CHAT_MSG_ADDON(prefix, text, channel, sender)
     ns.lastAddonSender = sender -- shown by /inn diag
     if ns.Comm then ns.Comm.OnMessage(prefix, text, channel, sender) end
@@ -1486,11 +1584,7 @@ GA:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
-for event in pairs(handlers) do
-    if event ~= CLEU or CombatLogGetCurrentEventInfo then
-        pcall(GA.RegisterEvent, GA, event) -- some events may not exist on every client
-    end
-end
+for event in pairs(handlers) do pcall(GA.RegisterEvent, GA, event) end -- one missing event mustn't stop the rest
 
 -- ---------------------------------------------------------------------------
 -- Slash commands
@@ -1504,11 +1598,10 @@ end
 local HELP = {
     "/inn (or /gach) - open or close the window",
     "/inn sync - ask online guildmates to resend their data",
-    "/inn announce on|off - also post your unlocks in guild chat",
+    "/inn announce on|off - post guild firsts and big unlocks in guild chat",
     "/inn toasts on|off - pop-ups for your unlocks",
     "/inn others on|off - pop-ups for guildmates' unlocks",
     "/inn obits on|off - guildmates' deaths in the feed",
-    "/inn stats - your deaths, jumps, duels and PvP record",
     "/inn chess <name> - challenge a guildie to chess (/inn chess opens the board)",
     "/inn chess barkeep | solo - practice against the barkeep, or play both sides",
     "/inn badge - show a test achievement alert",
@@ -1588,12 +1681,6 @@ SlashCmdList.GUILDACHIEVEMENTS = function(msg)
     elseif cmd == "obits" then
         s.obituaries = OnOff(rest, s.obituaries); ns.Print("obituaries in the feed " .. (s.obituaries and "on" or "off"))
         if ns.UI then ns.UI.Refresh() end
-    elseif cmd == "stats" then
-        local st = ns.char.stats
-        ns.Print(string.format("deaths %d (worst day: %d). Jumps %d. Duels: %d won, %d lost, %d fled; vs guildmates %d won, %d lost.",
-            st.deaths, st.bestDayDeaths, st.jumps or 0, st.duelsWon, st.duelsLost, st.duelsFled, st.gDuelsWon, st.gDuelsLost))
-        ns.Print(string.format("PvP: %d honorable kills, %d killing blows, highest rank %d.",
-            st.hk or 0, st.killingBlows or 0, st.pvpRank or 0))
     elseif cmd == "chess" then
         local G = ns.ChessGame
         local arg = rest:lower()

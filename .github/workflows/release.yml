@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0 (runs on Node 24)
       - name: Install LuaJIT (WoW runs Lua 5.1)
         run: sudo apt-get update -q && sudo apt-get install -y -q luajit zip
-      - name: Run the tests (simulated Forever and Classic Era clients)
+      - name: Run the tests (simulated Forever client)
         run: luajit tests/run.lua
       - name: Build the zip
         run: scripts/package.sh

@@ -1,11 +1,13 @@
 -- Guild sync over the hidden addon channel.
 --
 -- Messages (fields separated by tabs):
---   H  ver                        hello: I just logged in, please resend
+--   H  ver  token                 hello: I just logged in, please resend (the token
+--                                 lets us recognise our own hello, see ns.FoundMe)
 --   L  id:ts,id:ts,...            part of the sender's earned list
 --   E  id  ts  [flags]            sender just earned id (flags: a = posted in guild chat, f = guild first)
---   S  d=1,w=2,...  rev           sender's death/duel counters (see ns.STAT_KEYS)
---   K  n  ts  zone                sender died (their death number n)
+--   S  d=1,w=2,...  rev           sender's leaderboard numbers: the game's own
+--                                 statistics and guild duels/chess (see ns.STAT_KEYS)
+--   K  ts  zone                   sender died
 --   U  winner  loser  fled  ts  rating   a duel between guildmates (sent by both duelists,
 --                                 each with its own duel rating from before the duel)
 --
@@ -43,7 +45,7 @@ local _, ns = ...
 local Comm = {}
 ns.Comm = Comm
 
-local PREFIX = "GACH1"
+local PREFIX = "GACH2" -- 2: 0.10 started a clean slate; 0.9.x (GACH1) isn't compatible
 local SEP = "\t"
 local MAX_LEN = 250
 local PROTOCOL = 1
@@ -184,19 +186,23 @@ function Comm.SendMyList()
     SendList({ "L" }, EarnedItems(ns.char.earned), { skipEmpty = true })
 end
 
+local statsSentAt, statsChangedAt = -1, -1
 function Comm.SendStats()
     if ns.HoldingData() then return end
+    statsSentAt = GetTime()
     Comm.Send("S", EncodeStats(ns.SharedStats()), ns.char.rev or 0)
 end
 
--- Counters change in bursts (a wipe, a duel streak); send them once things settle.
+-- Numbers change in bursts (a wipe, a chess evening); send them once things
+-- settle. Skipped if they went out in the meantime.
 local statsPending = false
 function Comm.QueueStats()
+    statsChangedAt = GetTime() -- (also while a send is already queued)
     if statsPending or not ns.ready or not ns.Guild() then return end
     statsPending = true
     C_Timer.After(5, function()
         statsPending = false
-        if ns.Guild() then Comm.SendStats() end
+        if ns.Guild() and statsSentAt < statsChangedAt then Comm.SendStats() end
     end)
 end
 
@@ -228,9 +234,13 @@ local function ResendRevoke(member, id)
     Comm.Send("R", member, id, g.revoked[member][id])
 end
 
+-- Our hello carries a random token: when it comes back over the guild
+-- channel, its sender is us, under the name the guild knows us by.
+local helloToken = tostring(math.random(100000000, 999999999))
+
 function Comm.Hello(force)
     if not ns.Guild() then return end
-    Comm.Send("H", PROTOCOL)
+    Comm.Send("H", PROTOCOL, helloToken)
     if ns.Workshop then ns.Workshop.SendSummary() end
     if ns.StartRestore() then return end -- a fresh install: our list and counters wait for the answer
     Comm.SendMyList()
@@ -396,7 +406,12 @@ function Comm.OnMessage(prefix, text, channel, sender)
     if ns.IsSecret(text) or ns.IsSecret(sender) then return end
     if not ns.Guild() or not ns.me then return end
     sender = ns.NormalizeName(sender)
-    if not sender or ns.SameName(sender, ns.me) then return end
+    if not sender then return end
+    if channel == "GUILD" and text == "H\t" .. PROTOCOL .. "\t" .. helloToken then
+        ns.FoundMe(sender)
+        return
+    end
+    if ns.SameName(sender, ns.me) then return end
 
     local f = Split(text)
     local kind = f[1]
@@ -438,10 +453,9 @@ function Comm.OnMessage(prefix, text, channel, sender)
         ns.ApplyStats(sender, DecodeStats(f[2]), tonumber(f[3]))
         Refresh()
     elseif kind == "K" then
-        local n, ts = tonumber(f[2]), tonumber(f[3])
-        if not n or not ts then return end
-        ns.ApplyStats(sender, { d = n })
-        ns.AddDeathFeed(sender, ns.Clean(f[4] or "", 40), n, ts)
+        local ts = tonumber(f[2])
+        if not ts then return end
+        ns.AddDeathFeed(sender, ns.Clean(f[3] or "", 40), ts)
         Refresh()
     elseif kind == "U" then
         local winner, loser, ts = ns.NormalizeName(f[2]), ns.NormalizeName(f[3]), tonumber(f[5])

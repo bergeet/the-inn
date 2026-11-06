@@ -1,5 +1,5 @@
 -- Tavern Chess, part 2: games. Challenges, moves and results travel as
--- addon whispers between the two players (prefix GACH1, kind "C"):
+-- addon whispers between the two players (prefix GACH2, kind "C"):
 --
 --   C i id color elo  invite; color = the challenger's color ("w"/"b"), elo = their rating
 --   C a id elo        accept, with the accepter's rating

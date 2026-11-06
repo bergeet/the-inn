@@ -9,12 +9,8 @@ local HERE = (debug.getinfo(1, "S").source:sub(2):match("^(.*)/[^/]*$")) or "."
 package.path = HERE .. "/?.lua;" .. package.path
 local Sim = require("sim")
 
--- Every test runs once per client flavor (see sim.lua) unless it names one.
-local FLAVORS = { "forever", "era" }
-local currentFlavor
-
 local tests = {}
-local function test(name, fn, onlyFlavor) tests[#tests + 1] = { name = name, fn = fn, only = onlyFlavor } end
+local function test(name, fn) tests[#tests + 1] = { name = name, fn = fn } end
 
 local function fail(msg, level) error(msg, (level or 1) + 1) end
 local function ok(v, msg) if not v then fail(msg or "assertion failed", 2) end end
@@ -25,7 +21,6 @@ end
 -- A guild with an officer (Ana, rank 1), and two members (Bob, Cid, rank 3).
 local function Guild(opts)
     opts = opts or {}
-    opts.flavor = opts.flavor or currentFlavor
     local w = Sim.NewWorld(opts)
     local players = {
         ana = w:AddPlayer({ name = "Ana", rank = 1, class = "PRIEST", level = 60, money = 50000 }),
@@ -48,6 +43,15 @@ end
 local function LoginAll(w, ...)
     for _, c in ipairs({ ... }) do c:Login() end
     w:Advance(12)
+end
+
+-- An unlock nobody has yet, for any test: The Deadmines (5 points)
+local function KillVanCleef(c) c:Fire("ENCOUNTER_END", 1094, "Edwin VanCleef", 1, 5, 1) end
+
+-- The game counted something in its statistics (WoW: Forever): tell the addon
+local function GameCounts(c, id, n)
+    c:Count(id, n)
+    c:Fire("CRITERIA_UPDATE")
 end
 
 -- Newest feed entry of a kind ("ach", "death", "duel")
@@ -105,7 +109,7 @@ test("first login credits past progress quietly", function()
     bob.state.profs = { prof1 = { name = "Mining", rank = 160, skillLine = 186 } }
     LoginAll(w, p.ana, bob)
 
-    for _, id in ipairs({ "lvl10", "lvl20", "lvl30", "gold10", "gold100", "quest50", "quest100", "prof75", "prof150" }) do
+    for _, id in ipairs({ "lvl10", "lvl20", "lvl30", "gold10", "gold100", "quest50", "quest100", "prof75" }) do
         ok(bob:Earned(id), "should have credited " .. id)
     end
     ok(not bob:Earned("lvl40"), "lvl40 is not done yet")
@@ -139,24 +143,23 @@ end)
 -- Earning and sharing
 -- ---------------------------------------------------------------------------
 
-test("level up is shared with guildmates", function()
+test("an unlock is shared with guildmates", function()
     local w, p = Guild()
-    LoginAll(w, p.ana, p.bob)
-    p.bob.state.level = 10
-    p.bob:Fire("PLAYER_LEVEL_UP", 10)
+    LoginAll(w, p.ana, p.bob, p.cid) -- (a guild first needs two other guildmates' data)
+    KillVanCleef(p.bob)
     w:Advance(4)
-    ok(p.bob:Earned("lvl10"))
+    ok(p.bob:Earned("dm"))
     ok(p.bob:LogHas("You earned"))
     local view = p.ana:ViewOf(p.bob)
-    ok(view and view.earned.lvl10, "Ana should know Bob reached 10")
+    ok(view and view.earned.dm, "Ana should know Bob cleared the Deadmines")
     local e = LatestFeed(p.ana, "ach")
     eq(e and e.who, p.bob.fullName, "Ana's feed should show Bob's unlock")
-    ok(not p.ana:LogHas("Bob earned"), "Bob posted it in guild chat, so Ana's addon doesn't print it again")
+    ok(not p.ana:LogHas("[The Deadmines]"), "a guild first: Bob posted it in guild chat, so Ana's addon doesn't print it again")
+    ok(p.ana:LogHas("[Trailblazer]"), "a small one he didn't post, so Ana's addon prints it")
     p.bob:Slash("announce off")
-    p.bob.state.level = 20
-    p.bob:Fire("PLAYER_LEVEL_UP", 20)
+    p.bob:Fire("ENCOUNTER_END", 1, "Archmage Arugal", 1, 5, 1)
     w:Advance(4)
-    ok(p.ana:LogHas("Bob earned"), "with announce off, Ana's addon prints it instead")
+    ok(p.ana:LogHas("[Shadowfang Keep]"), "with announce off, Ana's addon prints it instead")
     Clean(w)
 end)
 
@@ -166,32 +169,40 @@ local function ChatLines(c)
     return out
 end
 
-test("unlocks are posted in guild chat: batched, throttled, never retro", function()
+test("guild chat gets guild firsts and big unlocks only: batched, throttled, never retro", function()
     local w, p = Guild()
     p.bob.state.level = 25 -- credited quietly on the first login
     p.bob.state.money = 500000
-    LoginAll(w, p.bob)
+    LoginAll(w, p.ana, p.bob, p.cid)
     eq(#p.bob.chat, 0, "retro credits are not posted")
-    p.bob.state.level = 40
-    p.bob:Fire("PLAYER_LEVEL_UP", 40)
+    -- Ana cleared the Deadmines first, so Bob's is a small, ordinary unlock
+    KillVanCleef(p.ana)
+    w:Advance(2)
+    KillVanCleef(p.bob)
+    w:Advance(15)
+    ok(p.bob:Earned("dm"))
+    eq(#p.bob.chat, 0, "a small unlock that isn't a guild first stays out of guild chat")
+    ok(p.ana:LogHas("[The Deadmines]"), "so guildies' addons print it themselves")
+    -- Two big ones at once become one line
+    p.bob:Fire("ENCOUNTER_END", 672, "Ragnaros", 9, 40, 1)
+    p.bob:Fire("ENCOUNTER_END", 617, "Nefarian", 9, 40, 1)
     w:Advance(3)
-    eq(#p.bob.chat, 1, "two level achievements become one line")
+    eq(#p.bob.chat, 1, "two raid bosses become one line")
     eq(p.bob.chat[1].chatType, "GUILD")
     ok(p.bob.chat[1].msg:find("I earned 2 achievements", 1, true), p.bob.chat[1].msg)
-    -- Something else right away waits for the 10 second throttle
-    p.bob:Die()
+    -- A guild first right away waits for the 10 second throttle
+    p.bob:Fire("ENCOUNTER_END", 1, "Archmage Arugal", 1, 5, 1)
     w:Advance(4)
     eq(#p.bob.chat, 1, "throttled")
     w:Advance(10)
     eq(#p.bob.chat, 2, "posted after the throttle")
-    ok(p.bob.chat[2].msg:find("Welcome to the Afterlife", 1, true), p.bob.chat[2].msg)
+    ok(p.bob.chat[2].msg:find("GUILD FIRST", 1, true), p.bob.chat[2].msg)
     for _, line in ipairs(ChatLines(p.bob)) do
         ok(not line:find("|", 1, true), "no escape codes in chat: " .. line)
         ok(#line <= 255, "fits in one chat message")
     end
     p.bob:Slash("announce off")
-    p.bob.state.level = 50
-    p.bob:Fire("PLAYER_LEVEL_UP", 50)
+    p.bob:Fire("ENCOUNTER_END", 793, "Hakkar", 9, 20, 1)
     w:Advance(15)
     eq(#p.bob.chat, 2, "nothing posted with announce off")
     Clean(w)
@@ -230,7 +241,7 @@ test("opened right after login, the window is settling in, not guildless", funct
 end)
 
 test("without a guild, the window says so once it has settled", function()
-    local w = Sim.NewWorld({ flavor = currentFlavor })
+    local w = Sim.NewWorld()
     local solo = w:AddPlayer({ name = "Solo", class = "MAGE", level = 10, inGuild = false })
     solo:Login()
     w:Advance(12)
@@ -238,6 +249,153 @@ test("without a guild, the window says so once it has settled", function()
     ok(FindRow(solo, "not in a guild"), "not in a guild")
     ok(not FindRow(solo, "Settling in"), "not stuck settling in")
     eq(UIW(solo).frame.signText:GetText(), "The Empty Tavern")
+    Clean(w)
+end)
+
+test("statistics are read in every format the game writes them", function()
+    local w, p = Guild()
+    p.bob.state.statistics = {
+        [1] = "286", [2] = "161 (Humanoid)", [3] = "1,234", [4] = "1 234", [5] = "1\194\160234", [6] = "1.234",
+        [7] = "29|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t 72|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+        [8] = "1 012|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t 3|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+    }
+    LoginAll(w, p.bob)
+    local want = { 286, 161, 1234, 1234, 1234, 1234, 2972, 10120300 }
+    for id, n in ipairs(want) do eq(p.bob.ns.Statistic(id), n, "statistic " .. id) end
+    eq(p.bob.ns.Statistic(9), 0, "-- is never")
+    Clean(w)
+end)
+
+test("a statistic the game hides for a moment isn't shared as 0", function()
+    local w, p = Guild()
+    w.secretMode = true
+    p.bob.state.statistics = { [60] = 286 }
+    LoginAll(w, p.ana, p.bob)
+    w:Advance(60) -- (a brand-new character first waits a minute for a possible restore)
+    eq(p.ana:ViewOf(p.bob).stats.d, 286)
+    w.secret["286"] = true -- in combat, say
+    local sent = #p.bob:Sent("S")
+    p.bob:Fire("CRITERIA_UPDATE")
+    w:Advance(40)
+    eq(p.bob:Guild().members[p.bob.fullName].stats.d, 286, "keeps the last known number")
+    eq(#p.bob:Sent("S"), sent, "and doesn't resend anything")
+    eq(p.ana:ViewOf(p.bob).stats.d, 286)
+    Clean(w)
+end)
+
+test("a change right after another stats message still goes out", function()
+    local w, p = Guild()
+    LoginAll(w, p.ana, p.bob)
+    p.bob.ns.Bump("chessWins")       -- queues a send in 5 seconds
+    w:Advance(2)
+    p.bob.ns.Comm.SendStats()        -- something else sends them now (a hello, say)
+    w:Advance(1)
+    p.bob.ns.Bump("chessWins")       -- while the first send is still queued
+    w:Advance(10)
+    eq(p.ana:ViewOf(p.bob).stats.cw, 2)
+    Clean(w)
+end)
+
+test("saved data from 0.9.x is cleared: a clean slate", function()
+    local w, p = Guild()
+    p.bob.saved.GuildAchCharDB = { earned = { lvl10 = 1, jump1000 = 1 }, stats = { deaths = 3, jumps = 40 },
+                                   firstScanDone = true, rev = 5 }
+    p.bob.saved.GuildAchDB = { settings = { announce = false, minimapAngle = 90 }, guilds = { ["Regulars@Forever"] = {
+        name = "Regulars", members = {}, custom = {}, deleted = {}, grants = {},
+        feed = { { who = "Ana-Forever", id = "lvl10", ts = 1 } } } } }
+    LoginAll(w, p.bob)
+    ok(not p.bob:Earned("jump1000") and not p.bob:Earned("lvl10"), "old unlocks are gone")
+    eq(p.bob.ns.char.stats.deaths, nil)
+    eq(p.bob.ns.settings.announce, true, "settings start from the defaults")
+    eq(#p.bob:Guild().feed, 0, "and the gossip from nothing")
+    p.bob:Slash("")
+    Room(p.bob, "feed")
+    -- New data survives a relog
+    KillVanCleef(p.bob)
+    w:Advance(2)
+    p.bob:Logout()
+    p.bob:Login()
+    w:Advance(12)
+    ok(p.bob:Earned("dm"), "kept")
+    Clean(w)
+end)
+
+-- Every texture the UI shows, after visiting every room, the alert and the chess board
+local function TexturesShown(c, w)
+    c:Slash("")
+    for _, tab in ipairs(UIW(c).tabs) do tab:Click() end
+    c:Slash("badge")
+    c:Slash("chess barkeep")
+    w:Advance(5)
+    local files, colors = {}, 0
+    for _, wd in ipairs(c.widgets) do
+        if wd._texture then files[wd._texture] = (files[wd._texture] or 0) + 1 end
+        if wd._color then colors = colors + 1 end
+    end
+    return files, colors
+end
+
+test("the art is the game's own, except the chess pieces", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    local files = TexturesShown(p.bob, w)
+    local own = 0
+    for file in pairs(files) do
+        if file:find("AddOns", 1, true) then
+            own = own + 1
+            ok(file:find("\\Media\\Chess"), "only chess art is the addon's own: " .. file)
+        end
+    end
+    ok(own > 0, "(the chess board was drawn)")
+    ok(files[p.bob.ns.UI.ART.parchment] and files[p.bob.ns.UI.ART.alertBg], "notes and the alert use the game's art")
+    Clean(w)
+end)
+
+test("a game texture this client lacks becomes a plain color, not an error", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    local art = p.bob.ns.UI.ART
+    p.bob:Logout()
+    for _, file in pairs(art) do w.missingArt[file] = true end
+    LoginAll(w, p.bob) -- (the minimap button is built at login)
+    local files, colors = TexturesShown(p.bob, w)
+    for _, file in pairs(p.bob.ns.UI.ART) do ok(not files[file], "nothing still shows " .. file) end
+    ok(colors > 0)
+    Clean(w)
+end)
+
+test("two-part names (Forever): you're in the guild once", function()
+    local w, p = Guild()
+    local lil = w:AddPlayer({ name = "Lil", last = "Hjalm", rank = 3, level = 13 })
+    LoginAll(w, p.ana, lil)
+    eq(lil.ns.me, "Lil Hjalm-Forever", "the name the guild knows")
+    local n = 0
+    for name in pairs(lil:Guild().members) do
+        ok(name ~= "Lil-Hjalm", "no member under the last name as a realm")
+        n = n + 1
+    end
+    eq(n, 2, "Lil and Ana, nobody twice")
+    lil:Slash("")
+    Room(lil, "boards")
+    local rows = 0
+    for _, l in ipairs(UIW(lil).lines) do
+        if l:IsShown() and (l.text:GetText() or ""):find("Lil", 1, true) then rows = rows + 1 end
+    end
+    eq(rows, 1, "one row for Lil on the Scoreboard")
+    Clean(w)
+end)
+
+test("your own hello tells you your name, if the guess was wrong", function()
+    local w, p = Guild()
+    -- A client that only gives the first name
+    local lil = w:AddPlayer({ name = "Lil", last = "Hjalm", rank = 3, unitFullName = { "Lil" } })
+    LoginAll(w, p.ana, lil)
+    eq(lil.ns.me, "Lil Hjalm-Forever", "corrected by our own hello")
+    eq(lil:Guild().members["Lil-Forever"], nil, "nothing left under the guess")
+    ok(lil:Guild().members["Lil Hjalm-Forever"], "it moved over")
+    KillVanCleef(lil)
+    w:Advance(3)
+    eq(LatestFeed(p.ana, "ach").who, "Lil Hjalm-Forever")
     Clean(w)
 end)
 
@@ -323,7 +481,7 @@ test("/inn diag reports the client's answers and changes nothing else", function
     eq(d.me, "Bob-Forever")
     eq(d.unitFullName, "true | Bob | Forever")
     eq(d.rosterFirstName, "true | Ana-Forever")
-    eq(d.pvpLifetime, w.flavor == "era" and "true | 3 | 0 | 6" or "true | 3 | 6")
+    eq(d.pvpLifetime, "true | 3 | 6")
     ok(d.lastAddonSender ~= "nil", "it has heard the guild channel")
     Clean(w)
 end)
@@ -358,29 +516,14 @@ end)
 
 test("guild chat posts wait until the fight is over", function()
     local w, p = Guild()
-    p.bob.state.money = 500000
     LoginAll(w, p.bob)
     p.bob.state.combat = true
-    p.bob.state.level = 10
-    p.bob:Fire("PLAYER_LEVEL_UP", 10)
+    p.bob:Fire("ENCOUNTER_END", 672, "Ragnaros", 9, 40, 1)
     w:Advance(20)
     eq(#p.bob.chat, 0, "held during combat")
     p.bob.state.combat = false
     w:Advance(6)
     eq(#p.bob.chat, 1, "posted after")
-    Clean(w)
-end)
-
-test("older installs switch guild chat announcements on once", function()
-    local w, p = Guild()
-    p.bob.saved.GuildAchDB = { settings = { announce = false } } -- the 0.1/0.2 default
-    LoginAll(w, p.bob)
-    eq(p.bob.ns.settings.announce, true)
-    p.bob:Slash("announce off")
-    p.bob:Logout()
-    p.bob:Login()
-    w:Advance(6)
-    eq(p.bob.ns.settings.announce, false, "turning it off sticks")
     Clean(w)
 end)
 
@@ -417,51 +560,27 @@ test("secret values are never used", function()
     w:Advance(2)
     ok(not p.bob:Earned("dm"), "a secret encounter name must be ignored")
     Clean(w)
-end, "forever")
+end)
 
-test("classic era: professions come from the skill list", function()
-    local w, p = Guild()
-    local bob = p.bob
-    bob.state.profs = {
-        prof1 = { name = "Mining", rank = 160 },
-        cooking = { name = "Cooking", rank = 300 },
-        fishing = { name = "Fishing", rank = 300 },
-    }
-    LoginAll(w, bob)
-    ok(bob:Earned("prof150"), "Mining 160 counts")
-    ok(not bob:Earned("prof225"))
-    ok(not bob:Earned("prof300"), "Cooking is not a primary profession")
-    ok(bob:Earned("cook300"), "Head Chef")
-    ok(bob:Earned("fish300"), "Master Angler")
-    Clean(w)
-end, "era")
-
-test("classic era: dungeon boss deaths in the combat log count", function()
-    local w, p = Guild()
-    LoginAll(w, p.ana, p.bob)
-    -- Outside an instance the combat log isn't watched at all
-    p.bob:CombatLog("UNIT_DIED", "Edwin VanCleef")
-    w:Advance(2)
-    ok(not p.bob:Earned("dm"), "not watching outside instances")
-    p.bob:SetInstance(true)
-    p.bob:CombatLog("UNIT_DIED", "Defias Pirate")
-    p.bob:CombatLog("SPELL_DAMAGE", "Edwin VanCleef")
-    w:Advance(1)
-    ok(not p.bob:Earned("dm"), "only the boss dying counts")
-    p.bob:CombatLog("UNIT_DIED", "Edwin VanCleef")
-    w:Advance(3)
-    ok(p.bob:Earned("dm"), "VanCleef died")
-    ok(p.ana:ViewOf(p.bob).earned.dm, "Ana hears about it")
-    p.bob:SetInstance(false)
-    Clean(w)
-end, "era")
-
-test("deaths are counted", function()
+test("deaths come from the game's statistics", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
-    for _ = 1, 10 do p.bob:Fire("PLAYER_DEAD") end
+    for _ = 1, 10 do p.bob:Die() end
     w:Advance(3)
-    ok(p.bob:Earned("death10"))
+    eq(p.bob.ns.char.stats.deaths, nil, "The Inn doesn't count them itself")
+    eq(p.bob.ns.StatValue("deaths"), 10)
+    ok(p.bob:Earned("death10"), "Corpse Runner")
+    Clean(w)
+end)
+
+test("a character's earlier deaths are credited quietly", function()
+    local w, p = Guild()
+    p.bob.state.statistics = { [60] = 60, [114] = 1 } -- before installing (or before 0.10)
+    LoginAll(w, p.ana, p.bob)
+    ok(p.bob:Earned("death50") and p.bob:Earned("fallDeath"), "credited from the game's statistics")
+    ok(not p.bob:LogHas("You earned"), "quietly")
+    eq(#p.bob:Sent("E"), 0)
+    eq(p.ana:ViewOf(p.bob).stats.d, 60, "Ana's death board has the game's number")
     Clean(w)
 end)
 
@@ -488,14 +607,13 @@ test("a death reaches the guild feed and the death leaderboard", function()
     p.bob.state.zone = "Westfall"
     p.bob:Die()
     w:Advance(8)
-    eq(p.bob.ns.char.stats.deaths, 1)
-    ok(p.bob:Earned("death1"), "Welcome to the Afterlife")
     local e = LatestFeed(p.ana, "death")
     ok(e, "Ana's feed has the obituary")
     eq(e.whos[1], p.bob.fullName)
     eq(e.zone, "Westfall")
-    eq(e.n, 1)
-    eq(p.ana:ViewOf(p.bob).stats.d, 1, "Ana's leaderboard counts Bob's death")
+    eq(p.bob.ns.char.stats.deaths, nil, "nothing counted by the addon")
+    ok(p.bob:Earned("death1"), "Welcome to the Afterlife, from the game's statistics")
+    eq(p.ana:ViewOf(p.bob).stats.d, 1, "Ana's leaderboard has the game's count")
     Clean(w)
 end)
 
@@ -523,7 +641,7 @@ test("a wipe becomes one feed line", function()
     Clean(w)
 end)
 
-test("dark achievements: dying early, rich, quickly, right after a ding, and often", function()
+test("dark achievements: dying early, rich, quickly and right after a ding", function()
     local w, p = Guild()
     local bob = p.bob
     bob.state.level = 5
@@ -550,12 +668,6 @@ test("dark achievements: dying early, rich, quickly, right after a ding, and oft
     bob:Die()
     w:Advance(2)
     ok(bob:Earned("dieRich"), "You Can't Take It With You")
-    bob:Revive()
-    w:Advance(300)
-    bob:Die()
-    w:Advance(2)
-    eq(bob.ns.char.stats.bestDayDeaths, 5)
-    ok(bob:Earned("day5"), "Bad Day at the Office")
     ok(not bob:Earned("dieMax"))
     Clean(w)
 end)
@@ -570,10 +682,12 @@ test("a duel between guildmates counts for both and shows once", function()
     w:Duel(p.bob, p.cid)
     w:Advance(8)
     local bs, cs, as = p.bob.ns.char.stats, p.cid.ns.char.stats, p.ana.ns.char.stats
-    eq(bs.duelsWon, 1); eq(bs.gDuelsWon, 1); eq(bs.vs[p.cid.fullName].w, 1)
-    eq(cs.duelsLost, 1); eq(cs.gDuelsLost, 1); eq(cs.vs[p.bob.fullName].l, 1)
-    eq(as.duelsWon + as.duelsLost, 0, "Ana only watched")
-    ok(p.bob:Earned("duelWin1") and p.bob:Earned("gduelWin1"), "First Blood, Family Feud")
+    eq(bs.gDuelsWon, 1); eq(bs.vs[p.cid.fullName].w, 1)
+    eq(cs.gDuelsLost, 1); eq(cs.vs[p.bob.fullName].l, 1)
+    eq(as.gDuelsWon + as.gDuelsLost, 0, "Ana only watched")
+    eq(bs.duelsWon, nil, "all duels are the game's to count")
+    ok(p.bob:Earned("gduelWin1"), "Family Feud")
+    ok(p.bob:Earned("duelWin1"), "First Blood, from the game's statistics")
     ok(p.cid:Earned("duelLose1"), "Participation Trophy")
     for _, c in ipairs({ p.ana, p.bob, p.cid }) do
         local n = 0
@@ -582,6 +696,7 @@ test("a duel between guildmates counts for both and shows once", function()
     end
     eq(p.ana:ViewOf(p.bob).stats.gw, 1, "Ana's Family Feuds board")
     eq(p.ana:ViewOf(p.cid).stats.gl, 1)
+    eq(p.ana:ViewOf(p.bob).stats.w, 1, "and her Duels Won board")
     Clean(w)
 end)
 
@@ -590,13 +705,11 @@ test("fleeing, and duels against strangers", function()
     LoginAll(w, p.ana, p.bob, p.cid)
     w:Duel(p.bob, "Zed")
     w:Advance(2)
-    eq(p.bob.ns.char.stats.duelsWon, 1)
     eq(p.bob.ns.char.stats.gDuelsWon, 0, "Zed isn't in the guild")
     eq(#p.bob:Sent("U"), 0, "no guild duel announced")
     w:Duel(p.bob, p.cid, true)
     w:Advance(8)
-    eq(p.cid.ns.char.stats.duelsFled, 1)
-    ok(p.cid:Earned("duelFlee"), "Tactical Retreat")
+    eq(p.cid.ns.char.stats.gDuelsLost, 1, "running away from a guildie is a loss")
     local e = LatestFeed(p.ana, "duel")
     ok(e and e.fled, "the feed knows Cid ran")
     Clean(w)
@@ -659,34 +772,13 @@ test("duel results parse in other client languages", function()
     p.bob.env.DUEL_WINNER_KNOCKOUT = "%2$s wurde von %1$s im Duell besiegt"
     w:System("Ana wurde von Bob im Duell besiegt")
     w:Advance(2)
-    eq(p.bob.ns.char.stats.duelsWon, 1, "Bob won")
+    eq(p.bob.ns.char.stats.gDuelsWon, 1, "Bob won")
     Clean(w)
 end)
 
 -- ---------------------------------------------------------------------------
 -- 0.3: jumps, PvP, shenanigans, together, guild firsts
 -- ---------------------------------------------------------------------------
-
-test("jump counter: counts real jumps, shares them in batches", function()
-    local w, p = Guild()
-    LoginAll(w, p.ana, p.bob)
-    p.bob:Jump(999)
-    p.bob.state.falling = true
-    p.bob:Jump(50) -- mashing jump in mid-air
-    p.bob.state.falling = false
-    p.bob.state.swimming = true
-    p.bob:Jump(50) -- swimming up
-    p.bob.state.swimming = false
-    eq(p.bob.ns.char.stats.jumps, 999, "only jumps from the ground count")
-    ok(not p.bob:Earned("jump1000"))
-    p.bob:Jump()
-    ok(p.bob:Earned("jump1000"), "Hop to It")
-    ok(p.bob:Earned("jumpDay"), "1,000 in one day")
-    eq(#p.bob:Sent("S"), 1, "jumping doesn't spam the guild channel") -- one from login only
-    w:Advance(310)
-    eq(p.ana:ViewOf(p.bob).stats.j, 1000, "Ana's Jumps board catches up within a few minutes")
-    Clean(w)
-end)
 
 test("PvP: lifetime honorable kills are credited quietly, new ones announced", function()
     local w, p = Guild()
@@ -697,29 +789,17 @@ test("PvP: lifetime honorable kills are credited quietly, new ones announced", f
     for _, id in ipairs({ "hk1", "hk100", "hk1000" }) do ok(p.bob:Earned(id), id) end
     ok(not p.bob:LogHas("You earned [Body Count]"), "old kills are credited quietly")
     eq(p.ana:ViewOf(p.bob).stats.hk, 1500, "Ana's Honorable Kills board")
-    eq(p.bob.ns.char.stats.pvpRank, 10)
-    ok(p.bob:Earned("rank10"), "Survived the Grind")
-    ok(not p.bob:Earned("rank14"), "the rank isn't read from the wrong value")
+    eq(p.bob.ns.StatValue("pvpRank"), 10, "read from the game")
+    eq(p.bob.ns.char.stats.pvpRank, nil, "not stored")
+    eq(p.bob.ns.byId.rank10, nil, "rank achievements are the game's own")
     eq(p.bob.ns.char.stats.dk, nil, "dishonorable kills aren't tracked")
     eq(p.ana:ViewOf(p.bob).stats.pr, 10, "Ana's PvP Rank board")
-    eq(p.bob.ns.Trackers.RankName(10),
-       w.flavor == "era" and "Rank 10 Title" or "Title of PVP_RANK_14_0", "the rank's title")
+    eq(p.bob.ns.Trackers.RankName(10), "Title of PVP_RANK_14_0", "the rank's title")
     p.bob.state.hk = 5000
     p.bob:Fire("PLAYER_PVP_KILLS_CHANGED")
     w:Advance(3)
     ok(p.bob:Earned("hk5000"), "Honorable Menace")
     ok(p.bob:LogHas("Honorable Menace"), "announced")
-    Clean(w)
-end)
-
-test("PvP: an old dishonorable kill stat or achievement is harmless", function()
-    local w, p = Guild()
-    LoginAll(w, p.ana, p.bob)
-    local before = p.ana.ns.PointsFor({ hk1 = 1 })
-    eq(p.ana.ns.PointsFor({ hk1 = 1, dk1 = 1 }), before, "a retired achievement earns no points")
-    p.ana.ns.ApplyStats(p.bob.ns.me, { hk = 3, dk = 9 }, 1)
-    eq(p.ana:ViewOf(p.bob).stats.hk, 3, "the rest of a 0.9.2 client's stats still apply")
-    eq(p.ana:ViewOf(p.bob).stats.dk, nil, "its dishonorable kills are ignored")
     Clean(w)
 end)
 
@@ -732,31 +812,30 @@ local function KillMob(c, npc, opts)
     c.state.targetGUID, c.state.targetClass, c.state.targetLevel = guid, opts.class or "normal", opts.level or 1
     c:Fire("PLAYER_TARGET_CHANGED")
     local by = opts.by or c:GUID()
-    if c.world.flavor == "era" then
-        c:CombatLog("PARTY_KILL", "A Mob", { source = by, dest = guid })
-    else
-        c:Fire("PARTY_KILL", by, guid)
-    end
+    c:Fire("PARTY_KILL", by, guid)
 end
 
-test("kills: elites alone count, outgrown ones and other people's don't", function()
+test("kills: an elite above you, alone, and only your own kill", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
     p.bob.state.level = 20
-    KillMob(p.bob, 100, { class = "elite", level = 17 })
-    eq(p.bob.ns.char.stats.soloElites, 1, "3 levels below still counts")
-    ok(p.bob:Earned("soloElite1"), "Nobody Asked for Help")
-    KillMob(p.bob, 100, { class = "elite", level = 16 })
-    KillMob(p.bob, 100, { class = "normal", level = 20 })
-    KillMob(p.bob, 100, { class = "elite", level = 20, by = "Player-1-Someoneelse" })
-    eq(p.bob.ns.char.stats.soloElites, 1, "too low, not elite, or not my kill")
-    ok(not p.bob:Earned("punchingUp"), "nothing above me yet")
+    KillMob(p.bob, 100, { class = "elite", level = 21 })
+    KillMob(p.bob, 100, { class = "normal", level = 25 })
+    KillMob(p.bob, 100, { class = "elite", level = 25, by = "Player-1-Someoneelse" })
+    ok(not p.bob:Earned("punchingUp"), "too close, not elite, or not my kill")
     KillMob(p.bob, 100, { class = "rareelite", level = 22 })
-    eq(p.bob.ns.char.stats.soloElites, 2)
     ok(p.bob:Earned("punchingUp"), "Punching Up")
+    eq(p.bob.ns.char.stats.soloElites, nil, "no counter")
+    Clean(w)
+end)
+
+test("kills: a pet's kill is yours", function()
+    local w, p = Guild()
+    LoginAll(w, p.bob)
+    p.bob.state.level = 20
     p.bob.state.petGUID = "Pet-0-1-2-3-4-5"
-    KillMob(p.bob, 100, { class = "elite", level = 20, by = p.bob.state.petGUID })
-    eq(p.bob.ns.char.stats.soloElites, 3, "a pet's kill is yours")
+    KillMob(p.bob, 100, { class = "elite", level = 23, by = p.bob.state.petGUID })
+    ok(p.bob:Earned("punchingUp"))
     Clean(w)
 end)
 
@@ -765,8 +844,8 @@ test("kills: in a group an elite doesn't count as alone", function()
     LoginAll(w, p.bob)
     p.bob.state.level = 20
     p.bob.state.party = { "Ana" }
-    KillMob(p.bob, 100, { class = "elite", level = 20 })
-    eq(p.bob.ns.char.stats.soloElites, nil)
+    KillMob(p.bob, 100, { class = "elite", level = 25 })
+    ok(not p.bob:Earned("punchingUp"))
     Clean(w)
 end)
 
@@ -796,67 +875,53 @@ test("kills: a secret kill is ignored without errors", function()
     LoginAll(w, p.bob)
     p.bob.ns.Trackers.OnPartyKill(nil, "Creature-0-1-2-3-448-1")
     p.bob.ns.Trackers.OnPartyKill(p.bob:GUID(), "not-a-creature")
-    eq(p.bob.ns.char.stats.soloElites, nil)
+    ok(not p.bob:Earned("hoggerEarly"))
     Clean(w)
 end)
 
-test("PvP: killing blows on players from the combat log", function()
+test("killing blows come from the game's statistics", function()
     local w, p = Guild()
-    LoginAll(w, p.bob)
-    p.bob:CombatLog("PARTY_KILL", "Hordeguy", { source = p.bob:GUID(), dest = "Player-2-ABC" })
-    p.bob:CombatLog("PARTY_KILL", "Kobold", { source = p.bob:GUID(), dest = "Creature-0-1" })
-    p.bob:CombatLog("PARTY_KILL", "Hordegal", { source = "Player-1-Someoneelse", dest = "Player-2-DEF" })
-    eq(p.bob.ns.char.stats.killingBlows, 1, "only my killing blows on players")
+    LoginAll(w, p.ana, p.bob)
+    GameCounts(p.bob, 1487)
+    w:Advance(8)
     ok(p.bob:Earned("kb1"), "Last Hit")
+    eq(p.ana:ViewOf(p.bob).stats.kb, 1, "Ana's Killing Blows board")
+    eq(p.bob.ns.char.stats.killingBlows, nil, "not counted by the addon")
     Clean(w)
-end, "era")
+end)
 
-test("deaths by falling, drowning and lava", function()
+test("deaths by falling, drowning and lava come from the game's statistics", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
-    p.bob:CombatLog("ENVIRONMENTAL_DAMAGE", "Bob", { dest = p.bob:GUID(), env = "Falling" })
-    p.bob:Die()
-    w:Advance(2)
+    p.bob:Die("falling")
+    w:Advance(3)
     ok(p.bob:Earned("fallDeath"), "Gravity Wins")
+    ok(not p.bob:Earned("drownDeath"))
     p.bob:Revive()
-    w:Advance(120)
-    p.bob:CombatLog("ENVIRONMENTAL_DAMAGE", "Bob", { dest = p.bob:GUID(), env = "DROWNING" })
-    w:Advance(10) -- too long ago to be the cause
-    p.bob:Die()
-    w:Advance(2)
-    ok(not p.bob:Earned("drownDeath"), "the drowning was 10 seconds before")
+    p.bob:Die("fire")
+    w:Advance(3)
+    ok(p.bob:Earned("lavaDeath"), "Hot Tub Time")
     Clean(w)
-end, "era")
+end)
 
-test("shenanigans: emotes, loot, fishing, hearth, flights, AFK, mounts, bags, quests", function()
+test("shenanigans: the game's numbers, mounts, bags, quests, factions", function()
     local w, p = Guild()
     LoginAll(w, p.bob)
     local bob = p.bob
-    for _ = 1, 100 do bob:Emote("DANCE") end
-    ok(bob:Earned("dance100"), "Can't Stop, Won't Stop")
-    bob:Loot("|cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r")
-    bob:Loot("|cff9d9d9d|Hitem:2|h[Broken Fang]|h|r", 5)
-    bob:Loot("|cnIQ5:|Hitem:3|h[Sulfuras]|h|r") -- newer client link format
-    bob:Fire("CHAT_MSG_LOOT", "Ana receives loot: |cffa335ee|Hitem:4|h[Not Yours]|h|r.")
-    local s = bob.ns.char.stats
-    eq(s.lootedEpic, 1); eq(s.lootedGrey, 5); eq(s.lootedLegendary, 1); eq(s.looted, 7)
-    ok(bob:Earned("epic1") and bob:Earned("legendary"), "Purple Haze, Legendary? In This Economy?")
-    bob.state.fishing = true
-    bob:Fire("LOOT_OPENED")
-    bob.state.fishing = false
-    bob:Fire("LOOT_OPENED")
-    eq(s.fishCaught, 1)
-    bob:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-1", 8690)
-    bob:Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-2", 133)
-    eq(s.hearths, 1)
-    bob:Fly()
+    -- What the game keeps in its statistics
+    GameCounts(bob, 341)        -- an epic
+    GameCounts(bob, 336)        -- a legendary
+    GameCounts(bob, 1456, 100)  -- fishing
+    GameCounts(bob, 353, 50)    -- hearthstone
+    GameCounts(bob, 349, 25)    -- flights
+    GameCounts(bob, 94, 10)     -- abandoned quests
+    GameCounts(bob, 1066, 100)  -- /lol
+    GameCounts(bob, 377, 1)     -- an exalted faction
     w:Advance(3)
-    bob:Land()
-    eq(s.flights, 1)
-    bob:SetAFK(true)
-    w:Advance(1900)
-    bob:SetAFK(false)
-    ok(bob:Earned("afkLong"), "Gone for Groceries")
+    for _, id in ipairs({ "epic1", "legendary", "fish100", "hearth50", "flights25", "abandon10", "lol100", "exalted1" }) do
+        ok(bob:Earned(id), id .. " from the game's statistics")
+    end
+    -- Moments the addon notices itself
     bob.state.mounted, bob.state.mountSpeed = true, 14
     w:Advance(4)
     ok(bob:Earned("mount") and bob:Earned("epicMount"), "Giddy Up, Need for Speed")
@@ -864,21 +929,29 @@ test("shenanigans: emotes, loot, fishing, hearth, flights, AFK, mounts, bags, qu
     bob:Fire("BAG_UPDATE_DELAYED")
     w:Advance(2)
     ok(bob:Earned("bagsFull"), "Inventory Tetris Champion")
-    bob.state.questLog = w.flavor == "era" and 20 or 25
+    bob.state.questLog = 25
     bob:Fire("QUEST_ACCEPTED", 123)
     w:Advance(1)
     ok(bob:Earned("questLogFull"), "Overcommitted")
-    for _ = 1, 10 do bob.env.AbandonQuest() end
-    ok(bob:Earned("abandon10"), "Commitment Issues")
     bob.state.factions = { 4, 8, 1 }
     bob:Fire("UPDATE_FACTION")
     w:Advance(4)
-    ok(bob:Earned("exalted1") and bob:Earned("hated"), "Best Friends Forever, Persona Non Grata")
+    ok(bob:Earned("hated"), "Persona Non Grata")
+    -- Nothing else is counted: jumping, dancing, looting, flying
+    for _ = 1, 20 do bob:Emote("DANCE") end
+    bob:Jump(50)
+    bob:Loot("|cffa335ee|Hitem:19019::::::::60:::::|h[Thunderfury]|h|r")
+    bob:Fly()
+    w:Advance(3)
+    bob:Land()
+    for k in pairs(bob.ns.char.stats) do
+        ok(k == "gDuelsWon" or k == "gDuelsLost" or k == "vs", "no counter for " .. k)
+    end
     Clean(w)
 end)
 
-test("session length, logins and the night owl", function()
-    local w = Sim.NewWorld({ flavor = currentFlavor })
+test("the night owl", function()
+    local w = Sim.NewWorld()
     -- Start the clock at 03:30 local time
     local t = os.date("*t", w.epoch)
     t.hour, t.min, t.sec = 3, 30, 0
@@ -887,14 +960,11 @@ test("session length, logins and the night owl", function()
     bob:Login()
     w:Advance(12)
     ok(bob:Earned("nightOwl"), "Should Be Asleep")
-    eq(bob.ns.char.stats.logins, 1)
-    w:Advance(6 * 3600 + 120)
-    ok(bob:Earned("session6"), "Touch Grass")
     Clean(w)
 end)
 
 test("together: guildmate emotes, the Guild Master, group kills", function()
-    local w = Sim.NewWorld({ flavor = currentFlavor })
+    local w = Sim.NewWorld()
     local gm = w:AddPlayer({ name = "Gus", rank = 0, level = 60 })
     local names = { "Bob", "Cid", "Dan", "Eve", "Fay", "Gil", "Hal", "Ivy", "Jon", "Kim", "Lea" }
     local ps = {}
@@ -926,19 +996,19 @@ end)
 
 test("guild firsts are flagged, posted and counted", function()
     local w, p = Guild()
-    p.cid.state.level = 12 -- Cid already has level 10
     LoginAll(w, p.ana, p.bob, p.cid)
-    p.bob.state.level = 10
-    p.bob:Fire("PLAYER_LEVEL_UP", 10)
+    KillVanCleef(p.cid)
+    w:Advance(3)
+    KillVanCleef(p.bob)
     w:Advance(3)
     ok(not LatestFeed(p.bob, "ach").first, "Cid got there first")
-    p.bob:Die()
+    p.bob:Die() -- level 9: Tutorial Failed
     w:Advance(3)
     local e
     for _, x in ipairs(p.ana:Guild().feed) do
-        if x.id == "death1" then e = x end
+        if x.id == "dieLow" then e = x end
     end
-    ok(e and e.first, "Ana's feed marks Bob's first death as a guild first")
+    ok(e and e.first, "Ana's feed marks Bob's early death as a guild first")
     ok(p.bob:Earned("guildFirst1"), "Trailblazer")
     w:Advance(15)
     local posted = false
@@ -949,17 +1019,13 @@ test("guild firsts are flagged, posted and counted", function()
     Clean(w)
 end)
 
-test("duel streaks and arch-nemesis", function()
+test("arch-nemesis", function()
     local w, p = Guild()
     LoginAll(w, p.bob, p.cid)
     for _ = 1, 5 do w:Duel(p.bob, p.cid) end
-    w:Advance(3)
-    ok(p.bob:Earned("duelStreak5"), "On Fire")
-    ok(p.cid:Earned("loseStreak5"), "Doormat Deluxe")
     for _ = 1, 5 do w:Duel(p.cid, p.bob) end
     w:Advance(3)
     ok(p.bob:Earned("rival10") and p.cid:Earned("rival10"), "Arch-Nemesis")
-    eq(p.bob.ns.char.stats.bestWinStreak, 5)
     Clean(w)
 end)
 
@@ -974,16 +1040,14 @@ end)
 
 test("the sign shows the guild's name", function()
     local w, p = Guild()
-    p.bob.saved.GuildAchDB = { settings = { version = 4, innName = "Mozarteum" } } -- a custom name from an older version
     LoginAll(w, p.bob)
-    eq(p.bob.ns.settings.innName, nil, "custom names are dropped")
     eq(p.bob.ns.UI.InnName(), "Regulars", "the guild's name")
     Clean(w)
 end)
 
 test("emote achievements are hidden until earned", function()
     local _, p = Guild()
-    for _, id in ipairs({ "dance100", "chicken25", "flex50", "cry10", "lol100", "hugs10", "waves10" }) do
+    for _, id in ipairs({ "lol100", "hugs10", "waves10" }) do
         p.bob:Login()
         local d = p.bob.ns.byId[id]
         ok(d and d.hidden and d.hint, id .. " is hidden with a hint")
@@ -1120,11 +1184,11 @@ test("chess: illegal, out-of-turn and forged moves are ignored", function()
     local w, p, white, black = ChessPair()
     local id = white.ns.ChessGame.Current().id
     -- Black's addon is "tampered" and whispers a move on white's turn, and an illegal one
-    black.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t1\te7e5", "WHISPER", white.name)
-    black.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t1\te2e5", "WHISPER", white.name)
+    black.env.C_ChatInfo.SendAddonMessage("GACH2", "C\tm\t" .. id .. "\t1\te7e5", "WHISPER", white.name)
+    black.env.C_ChatInfo.SendAddonMessage("GACH2", "C\tm\t" .. id .. "\t1\te2e5", "WHISPER", white.name)
     -- Cid, not in this game, tries to move for black
     Play(w, white, "e2e4")
-    p.cid.env.C_ChatInfo.SendAddonMessage("GACH1", "C\tm\t" .. id .. "\t2\te7e5", "WHISPER", white.name)
+    p.cid.env.C_ChatInfo.SendAddonMessage("GACH2", "C\tm\t" .. id .. "\t2\te7e5", "WHISPER", white.name)
     w:Advance(1)
     eq(#white.ns.ChessGame.Current().moves, 1, "only white's real move counts")
     Clean(w)
@@ -1162,7 +1226,7 @@ test("chess: resigning and draws", function()
     eq(white.ns.char.stats.chessDraws, 1)
     white:Slash("chess clear")
     black:Slash("chess clear")
-    white:Slash("chess Bob")
+    white:Slash("chess " .. black.name) -- (who is white is random)
     w:Advance(1)
     black:Slash("chess accept")
     w:Advance(1)
@@ -1233,7 +1297,7 @@ test("the badge, the tavern and every board render", function()
     end
     w:Advance(30)
     p.bob:Slash("stats")
-    ok(p.bob:LogHas("honorable kills"))
+    ok(p.bob:LogHas("unknown command"), "/inn stats is gone: the game has its own statistics")
     Clean(w)
 end)
 
@@ -1256,7 +1320,7 @@ test("guildmates who are never online together still see each other (relay)", fu
     w:Advance(20)
     local view = p.cid:ViewOf(p.bob)
     ok(view and view.earned.lvl10, "Cid knows Bob reached 10")
-    eq(view.stats.d, 1, "and that he died")
+    eq(view.stats.d, 1, "and the game's count of his deaths")
     eq(view.lastSeen, 0, "relayed data doesn't count as having seen Bob")
     -- Next time Cid logs in he already has it, so he doesn't ask again
     p.cid:Logout()
@@ -1285,7 +1349,6 @@ local function BobHistory(w, p)
     p.bob:Fire("PLAYER_LEVEL_UP", 10)
     p.bob.ns.char.stats.chessElo = 1400
     p.bob.ns.char.stats.chessWins = 4
-    p.bob.ns.char.stats.jumps = 250
     p.bob.ns.Touch()
     w:Advance(10)
     local view = p.ana:ViewOf(p.bob)
@@ -1301,7 +1364,7 @@ local function WatchAna(w, p, seconds)
         local v = p.ana.ns.Guild() and p.ana:ViewOf(p.bob) -- (nil until Ana's guild loads)
         if v then
             eq(v.stats.ce, 1400, "Ana never sees Bob at a fresh rating")
-            ok((v.stats.d or 0) >= 3 and (v.stats.j or 0) >= 250, "Ana never sees lower counters")
+            ok((v.stats.cw or 0) >= 4 and (v.stats.d or 0) >= 3, "Ana never sees lower numbers")
             ok(v.earned.dieLow, "Ana keeps Bob's unlocks")
         end
     end
@@ -1333,10 +1396,9 @@ test("restore: a lost install comes back from a guildmate, quietly", function()
     local bob = p.bob
     ok(bob:Earned("dieLow"), "the unlock the game can't report came back")
     eq(bob.ns.char.earned.dieLow, dieLowAt, "with its original date")
-    eq(bob.ns.char.stats.deaths, 3, "deaths")
+    eq(bob.ns.char.stats.deaths, nil, "deaths are the game's, nothing to restore")
     eq(bob.ns.char.stats.chessElo, 1400, "chess rating")
     eq(bob.ns.char.stats.chessWins, 4, "chess wins")
-    eq(bob.ns.char.stats.jumps, 250, "jumps")
     ok(bob.ns.char.rev > oldRev, "a newer rev, so the restored values win")
     ok(bob:LogHas("restored") and bob:LogHas("from Ana"), "says where it came from")
     eq(#bob:Sent("A"), 1, "asked once")
@@ -1352,7 +1414,7 @@ test("restore: a lost install comes back from a guildmate, quietly", function()
     w:Advance(30)
     p.cid:Raw("N\tBob-Forever\td=99,ce=900")
     w:Advance(2)
-    eq(bob.ns.char.stats.deaths, 3, "ignored")
+    eq(bob.ns.char.stats.chessWins, 4, "ignored")
     eq(bob.ns.char.stats.chessElo, 1400, "ignored")
     Clean(w)
 end)
@@ -1363,10 +1425,10 @@ test("restore: a character with its own data ignores answers about itself", func
     p.bob.sent = {} -- (his very first login did ask: a new character has no data either)
     p.cid:Login()
     w:Advance(12)
-    p.cid:Raw("N\tBob-Forever\td=99,ce=900,j=5")
+    p.cid:Raw("N\tBob-Forever\tcw=99,ce=900")
     p.cid:Raw("M\tBob-Forever\t1\t1\tdieMax:1793700000")
     w:Advance(2)
-    eq(p.bob.ns.char.stats.deaths, 3)
+    eq(p.bob.ns.char.stats.chessWins, 4)
     eq(p.bob.ns.char.stats.chessElo, 1400)
     ok(not p.bob:Earned("dieMax"))
     eq(#p.bob:Sent("A"), 0, "never asks")
@@ -1383,7 +1445,7 @@ test("restore: only the character file was lost, so the account file has it", fu
     p.bob:Login()
     w:Advance(15)
     ok(p.bob:Earned("dieLow"))
-    eq(p.bob.ns.char.stats.deaths, 3)
+    eq(p.bob.ns.char.stats.chessWins, 4)
     eq(p.bob.ns.char.stats.chessElo, 1400)
     ok(p.bob:LogHas("this computer's saved data"))
     eq(#p.bob:Sent("A"), 0, "no need to ask anyone")
@@ -1399,12 +1461,16 @@ test("restore: a guildmate with a copy who logs in a bit later still answers", f
     p.bob.saved = {}
     p.cid:Login() -- has never seen Bob
     w:Advance(12)
+    -- The game still knows his level (and on Forever his statistics), so his
+    -- first scan credits those again while he waits for a copy
+    p.bob.state.level = 30
     p.bob:Login()
     w:Advance(20)
-    eq(p.bob.ns.char.stats.deaths, 0, "nobody had a copy yet")
+    eq(p.bob.ns.char.stats.chessWins or 0, 0, "nobody had a copy yet")
+    ok(p.bob:Earned("lvl30"), "credited from the game")
     p.ana:Login()
     WatchAna(w, p, 20)
-    eq(p.bob.ns.char.stats.deaths, 3, "Ana's copy arrived")
+    eq(p.bob.ns.char.stats.chessWins, 4, "Ana's copy arrived")
     eq(p.bob.ns.char.stats.chessElo, 1400)
     eq(p.cid:ViewOf(p.bob).stats.ce, 1400, "Cid gets the restored rating too")
     Clean(w)
@@ -1544,7 +1610,7 @@ test("workshop: a new recipe sends just the change, and a hello sends no lists",
     Clean(w)
 end)
 
-test("workshop: collapsed categories don't wipe known recipes", function()
+test("workshop: opening the window again keeps known recipes and adds new ones", function()
     local w, p = AlchemistGuild()
     p.bob:OpenProfession(AlchemyWindow())
     w:Advance(1)
@@ -1554,39 +1620,9 @@ test("workshop: collapsed categories don't wipe known recipes", function()
     w:Advance(1)
     p.bob:CloseProfession()
     w:Advance(5)
-    local mine = p.bob.ns.char.profs[ALCHEMY]
-    eq((Recipes(p.ana, p.bob)), "17635,2329,2330,3170", "kept the hidden ones, added the new one")
-    if w.flavor == "era" then
-        ok(mine.partial, "knows the list may be missing something")
-        p.bob:Slash("")
-        Room(p.bob, "workshop")
-        w:Advance(0.1)
-        ok(FindRow(p.bob, "everything expanded"), "and says so on the Workshop tab")
-        p.bob:OpenProfession(AlchemyWindow({ flask = true }))
-        w:Advance(1)
-        ok(not mine.partial, "everything visible again")
-    end
+    eq((Recipes(p.ana, p.bob)), "17635,2329,2330,3170", "kept the known ones, added the new one")
     Clean(w)
 end)
-
-test("workshop: Enchanting uses the craft window on Classic Era", function()
-    local w, p = Guild()
-    p.bob.state.profs = { prof1 = { name = "Enchanting", rank = 60, skillLine = 333 } }
-    LoginAll(w, p.ana, p.bob)
-    p.bob:OpenProfession({ craft = true, name = "Enchanting", rank = 60, max = 75,
-                           lines = { { header = "Bracer" }, { spell = 7418 }, { header = "Chest" }, { spell = 7420 } } })
-    w:Advance(1)
-    p.bob:CloseProfession()
-    -- The hunter's Beast Training also uses the craft window, with no skill line
-    p.bob:OpenProfession({ craft = true, lines = { { spell = 2550 } } })
-    w:Advance(1)
-    p.bob:CloseProfession()
-    w:Advance(5)
-    local e = p.ana:ViewOf(p.bob).profs["333"]
-    ok(e and e.recipes["7418"] and e.recipes["7420"], "Ana sees both enchants")
-    eq(e.n, 2, "and nothing from Beast Training")
-    Clean(w)
-end, "era")
 
 test("workshop: someone else's linked profession isn't recorded as yours", function()
     local w, p = AlchemistGuild()
@@ -1596,7 +1632,7 @@ test("workshop: someone else's linked profession isn't recorded as yours", funct
     w:Advance(5)
     eq(p.bob.ns.char.profs[ALCHEMY].n, 0)
     Clean(w)
-end, "forever")
+end)
 
 test("workshop: dropping a profession takes it off the board", function()
     local w, p = AlchemistGuild()
@@ -1640,7 +1676,7 @@ test("workshop: the tab lists crafters, recipes, and search finds who can make i
     flask:Click()
     local box = ana.env.TheInnCopyBox
     ok(box and box:IsShown(), "the copy box opens")
-    ok(box.url:find("^https://www.wowhead.com/classic/spell=%d+$"), "with a Wowhead link: " .. tostring(box.url))
+    ok(box.url:find("^https://www.wowhead.com/forever/spell=%d+$"), "with a Wowhead link: " .. tostring(box.url))
     -- Search
     ui.search:SetText("titans")
     ui.search:GetScript("OnTextChanged")(ui.search, true)
@@ -1676,26 +1712,6 @@ test("workshop: item tooltips say who can craft it", function()
     tt.GetItem = function() return "Flask of the Titans", nil end
     tt:GetScript("OnTooltipSetItem")(tt)
     eq(#added, 0, "can be switched off")
-    Clean(w)
-end)
-
-test("data saved by older versions still loads", function()
-    local w, p = Guild()
-    local ts = w:ServerTime() - 86400
-    p.bob.saved.GuildAchCharDB = { earned = { lvl10 = ts }, stats = { maxMoney = 0, deaths = 3 }, firstScanDone = true }
-    p.bob.saved.GuildAchDB = { settings = {}, guilds = { ["Regulars@Forever"] = {
-        name = "Regulars",
-        members = { ["Ana-Forever"] = { earned = { lvl10 = ts }, lastSeen = ts } },
-        custom = {}, deleted = {}, grants = {},
-        feed = { { who = "Ana-Forever", id = "lvl10", ts = ts } },
-    } } }
-    p.bob.state.level = 12
-    LoginAll(w, p.bob)
-    eq(p.bob.ns.char.stats.deaths, 3, "kept")
-    eq(p.bob.ns.char.stats.duelsWon, 0, "new counters start at zero")
-    p.bob:Slash("")
-    for _, tab in ipairs(p.bob.ns.UI._widgets().tabs) do tab:Click() end
-    w:Advance(1)
     Clean(w)
 end)
 
@@ -2036,7 +2052,6 @@ test("rooms: the Scoreboard alone and in company, the Gossip board, settings", f
     Room(p.bob, "boards")
     ok(FindRow(p.bob, "top of the board, technically"), "alone: top of the board")
     ok(FindRow(p.bob, "empty stool"), "and empty stools")
-    eq(p.bob.ns.UI._widgets().room.tally[2]:GetText(), "0", "your tally: deaths")
     p.ana:Login()
     p.ana.state.level = 30
     w:Advance(15)
@@ -2140,29 +2155,27 @@ end)
 local ALLOWED_GLOBALS = {
     -- Lua
     "date", "ipairs", "math", "next", "pairs", "pcall", "print", "select", "string", "table", "time",
-    "tinsert", "tonumber", "tostring", "type", "unpack", "error",
+    "tinsert", "tonumber", "tostring", "type",
     -- Read-only game state
     "GetGuildInfo", "GetGuildRosterInfo", "GetMoney", "GetNormalizedRealmName", "GetNumGuildMembers",
-    "GetNumSkillLines", "GetProfessionInfo", "GetProfessions", "GetQuestsCompleted", "GetServerTime",
-    "GetSkillLineInfo", "GetTime", "IsInGuild", "UnitFullName", "UnitLevel", "issecretvalue",
-    "C_QuestLog", "C_GuildInfo", "C_ClassColor", "RAID_CLASS_COLORS", "Enum",
-    "GuildRoster",                  -- asks the client to refresh the guild list (Classic Era name)
-    "IsInInstance", "CombatLogGetCurrentEventInfo", -- boss deaths in dungeons (Classic Era)
+    "GetProfessionInfo", "GetProfessions", "GetServerTime", "GetTime", "IsInGuild", "UnitFullName", "UnitLevel",
+    "issecretvalue", "C_QuestLog", "C_GuildInfo", "C_ClassColor", "RAID_CLASS_COLORS", "Enum",
     "IsInRaid", "GetRealZoneText", "UnitIsDeadOrGhost", -- death achievements and obituaries
     "DUEL_WINNER_KNOCKOUT", "DUEL_WINNER_RETREAT",      -- the client's own duel result text
     "GameTooltip", "BackdropTemplateMixin",              -- tooltips and frame backgrounds
-    -- 0.3 trackers: all read-only state...
-    "UnitName", "UnitGUID", "UnitExists", "UnitIsPlayer", "UnitIsAFK", "UnitOnTaxi", "GetNumGroupMembers",
+    -- The game's own statistics: deaths, duels, kills, loot... read instead of
+    -- counted (see ns.GAME_STATS)
+    "GetStatistic",
+    -- Trackers (the moments behind the sillier achievements): all read-only state...
+    "UnitName", "UnitGUID", "UnitExists", "UnitIsPlayer", "GetNumGroupMembers",
     "UnitClassification", "IsInGroup",                   -- elites killed alone: is it elite, am I grouped
-    "IsFalling", "IsSwimming", "IsFlying", "IsMounted", "GetUnitSpeed", "IsFishingLoot",
-    "C_Container", "GetContainerNumFreeSlots", "GetContainerNumSlots",
-    "GetNumQuestLogEntries", "MAX_QUESTLOG_QUESTS",
-    "C_Reputation", "GetNumFactions", "GetFactionInfo",
-    "GetPVPLifetimeStats", "GetPVPRankInfo",
-    "GetText", "UnitFactionGroup", "UnitSex",            -- PvP rank titles on Forever: reads game strings
-    "LOOT_ITEM_SELF", "LOOT_ITEM_SELF_MULTIPLE", "LOOT_ITEM_PUSHED_SELF", "LOOT_ITEM_PUSHED_SELF_MULTIPLE",
-    -- ...plus post-hooks: our code runs after JumpOrAscendStart / DoEmote /
-    -- AbandonQuest and never changes what they do (no taint, no automation)
+    "IsSwimming", "IsFlying", "IsMounted", "GetUnitSpeed", -- mounts
+    "C_Container",                                       -- full bags
+    "C_Reputation",                                      -- hated by a faction
+    "GetPVPLifetimeStats",                               -- PvP rank and honorable kills
+    "GetText", "UnitFactionGroup", "UnitSex",            -- PvP rank titles: reads game strings
+    -- ...plus a post-hook: our code runs after DoEmote (emotes at guildmates)
+    -- and never changes what it does (no taint, no automation)
     "hooksecurefunc",
     "InCombatLockdown", "Minimap", "GetCursorPosition", -- the minimap button -- read-only: are we in combat (to hold guild chat posts)
     -- Own UI, timers and saved data
@@ -2170,12 +2183,9 @@ local ALLOWED_GLOBALS = {
     "GuildAchDB", "GuildAchCharDB", "SLASH_GUILDACHIEVEMENTS1", "SLASH_GUILDACHIEVEMENTS2", "SLASH_GUILDACHIEVEMENTS3",
     -- Messaging: hidden guild addon channel, and the opt-in guild chat line
     "C_ChatInfo", "SendChatMessage",
-    -- 0.7 Workshop: reading the player's own profession window while they have
-    -- it open (never opening, expanding or crafting; see the tests below)
-    "C_TradeSkillUI", "IsTradeSkillLinked", "GetTradeSkillLine", "GetNumTradeSkills", "GetTradeSkillInfo",
-    "GetTradeSkillRecipeLink", "GetTradeSkillItemLink",
-    "GetCraftDisplaySkillLine", "GetNumCrafts", "GetCraftInfo", "GetCraftRecipeLink", "GetCraftItemLink",
-    "C_Spell", "GetSpellInfo", "C_Item", "GetItemInfo", -- recipe names, for search
+    -- Workshop: reading the player's own profession window while they have it
+    -- open (never opening, expanding or crafting; see the tests below)
+    "C_TradeSkillUI", "C_Spell",                         -- recipe names, for search
     "ItemRefTooltip", "TooltipDataProcessor",           -- the "Craftable by" tooltip line (post-hook)
 }
 
@@ -2194,7 +2204,6 @@ local NAMESPACE_FIELDS = {
     C_Reputation   = { "GetNumFactions", "GetFactionDataByIndex" },               -- exalted achievements
     C_Container    = { "GetContainerNumFreeSlots", "GetContainerNumSlots" },      -- "bags full"
     C_Spell        = { "GetSpellName" },                                          -- recipe names
-    C_Item         = { "GetItemNameByID" },                                       -- recipe names
     C_TradeSkillUI = { "IsTradeSkillLinked", "IsTradeSkillGuild", "IsNPCCrafting", -- is the open window ours?
                        "GetBaseProfessionInfo", "GetTradeSkillLine",              -- which profession, what skill
                        "GetAllRecipeIDs", "GetRecipeInfo" },                      -- which recipes are learned
@@ -2204,8 +2213,7 @@ local NAMESPACE_FIELDS = {
 -- test for existence, never read to call: post-hooks that count what the
 -- player did, without changing or repeating it.
 local HOOKED_FIELDS = {
-    C_QuestLog = { "AbandonQuest" },  -- "abandoned quests" stat
-    C_ChatInfo = { "PerformEmote" },  -- emote stats
+    C_ChatInfo = { "PerformEmote" },  -- emotes at guildmates
 }
 
 -- The Inn's own rule, not a list of functions Blizzard bans: these names
@@ -2398,8 +2406,8 @@ test("API policy catches what it should, and only that", function()
         "C_TradeSkillUI['Craft' .. 'Recipe'](1)",                -- computed key
         "C_Container.PickupItem(0, 1)",                          -- an unlisted field
         "C_GuildInfo.Uninvite('Bob')",                           -- an unlisted field
-        "C_QuestLog.AbandonQuest()",                             -- a hooked field, called
-        "local x = C_QuestLog.AbandonQuest",                     -- a hooked field, read
+        "C_ChatInfo.PerformEmote('DANCE')",                      -- a hooked field, called
+        "local x = C_ChatInfo.PerformEmote",                     -- a hooked field, read
         "pairs(C_TradeSkillUI)",                                 -- passed around
         "local T = C_TradeSkillUI or {}",                        -- alias
         "CastSpellByName('Hearthstone')",                        -- denylisted global
@@ -2415,8 +2423,8 @@ test("API policy catches what it should, and only that", function()
         "-- C_TradeSkillUI.CraftRecipe and ExpandTradeSkillSubClass are never called\nprint(1)",
         "print('This addon never calls CraftRecipe')",
         "if C_TradeSkillUI and C_TradeSkillUI.GetRecipeInfo then C_TradeSkillUI.GetRecipeInfo(1) end",
-        "local f = C_Container and C_Container.GetContainerNumSlots or GetContainerNumSlots",
-        "if C_QuestLog and C_QuestLog.AbandonQuest then hooksecurefunc(C_QuestLog, 'AbandonQuest', print) end",
+        "local f = C_Container and C_Container.GetContainerNumSlots",
+        "if C_ChatInfo and C_ChatInfo.PerformEmote then hooksecurefunc(C_ChatInfo, 'PerformEmote', print) end",
         "pcall(hooksecurefunc, C_ChatInfo, 'PerformEmote', print)",
         "--[[ local T = C_TradeSkillUI ]] print([[C_Container.UseContainerItem]])",
         "GuildAchDB = GuildAchDB or {}",
@@ -2433,19 +2441,15 @@ end)
 
 local filter = arg[1]
 local passed, failed = 0, 0
-for _, flavor in ipairs(FLAVORS) do
-    print("[" .. flavor .. "]")
-    currentFlavor = flavor
-    for _, t in ipairs(tests) do
-        if (not filter or t.name:find(filter, 1, true)) and (not t.only or t.only == flavor) then
-            local okRun, err = xpcall(t.fn, debug.traceback)
-            if okRun then
-                passed = passed + 1
-                print("  ok    " .. t.name)
-            else
-                failed = failed + 1
-                print("  FAIL  " .. t.name .. "\n        " .. tostring(err):gsub("\n", "\n        "))
-            end
+for _, t in ipairs(tests) do
+    if not filter or t.name:find(filter, 1, true) then
+        local okRun, err = xpcall(t.fn, debug.traceback)
+        if okRun then
+            passed = passed + 1
+            print("  ok    " .. t.name)
+        else
+            failed = failed + 1
+            print("  FAIL  " .. t.name .. "\n        " .. tostring(err):gsub("\n", "\n        "))
         end
     end
 end

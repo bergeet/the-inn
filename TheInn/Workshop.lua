@@ -9,7 +9,7 @@
 -- Professions are keyed by skill line id ("171" = Alchemy) so every client
 -- language agrees; recipes by spell id ("2329"), or "i<item id>" on a client
 -- that only offers item links. A member's data:
---   m.profs[key] = { rank, max, ver, recipes = { [id] = true }, n, partial, want }
+--   m.profs[key] = { rank, max, ver, recipes = { [id] = true }, n, want }
 --   m.pv         = version of the profession list (newer data has a higher pv)
 -- ver is the version of the recipe list we hold; want is the newest version
 -- we've heard of. Lists only grow (recipes can't be unlearned), so a change
@@ -105,7 +105,7 @@ end
 -- Skill levels, from the profession list. quiet: at login (the hello sends them)
 function W.ScanSkills(quiet)
     if not ns.char then return end
-    local list, complete = ns.GetProfessions()
+    local list = ns.GetProfessions()
     if #list == 0 then return end -- not loaded yet
     local profs, seen, changed = Mine(), {}, false
     for _, p in ipairs(list) do
@@ -125,15 +125,12 @@ function W.ScanSkills(quiet)
             end
         end
     end
-    -- Unlearned a profession. (Only when the whole list was visible: a
-    -- collapsed header in the Skills pane hides professions too.)
-    if complete ~= false then
-        for key in pairs(profs) do
-            if not seen[key] then
-                profs[key] = nil
-                pendingDelta[key] = nil
-                changed = true
-            end
+    -- Unlearned a profession
+    for key in pairs(profs) do
+        if not seen[key] then
+            profs[key] = nil
+            pendingDelta[key] = nil
+            changed = true
         end
     end
     if changed then
@@ -144,17 +141,6 @@ function W.ScanSkills(quiet)
             Changed(10)
         end
     end
-end
-
-local function LinkId(link)
-    if type(link) ~= "string" or IsSecret(link) then return nil end
-    return link:match("enchant:(%d+)") or link:match("spell:(%d+)")
-end
-
-local function ItemId(link)
-    if type(link) ~= "string" or IsSecret(link) then return nil end
-    local id = link:match("item:(%d+)")
-    return id and ("i" .. id) or nil
 end
 
 local function Call(fn, ...)
@@ -173,7 +159,7 @@ local function NotMine()
                            or Call(C_TradeSkillUI.IsNPCCrafting)) then
         return true
     end
-    return Call(IsTradeSkillLinked) and true or false
+    return false
 end
 
 -- The profession in the open trade skill window: key, rank, max
@@ -186,12 +172,10 @@ local function TradeSkillLine()
         local id, name, rank, max = Call(C_TradeSkillUI.GetTradeSkillLine)
         if id or name then return W.Key(name, id), rank, max end
     end
-    local name, rank, max = Call(GetTradeSkillLine)
-    if name and name ~= "UNKNOWN" and not IsSecret(name) then return W.Key(name), rank, max end
 end
 
--- Add what the window showed. complete: no collapsed categories.
-local function Merge(key, rank, max, ids, complete)
+-- Add what the window showed
+local function Merge(key, rank, max, ids)
     local profs = Mine()
     local e = profs[key]
     local changed = false
@@ -213,12 +197,6 @@ local function Merge(key, rank, max, ids, complete)
             added[#added + 1] = id
         end
     end
-    -- Collapsed categories hide their recipes: keep what we knew, and say so
-    local partial = (not complete) or nil
-    if partial ~= e.partial then
-        e.partial = partial
-        if ns.UI then ns.UI.Refresh() end
-    end
     if #added > 0 then
         local d = pendingDelta[key]
         if not d then
@@ -232,52 +210,18 @@ local function Merge(key, rank, max, ids, complete)
     if changed then Changed(5) end
 end
 
--- The trade skill window (every profession except Enchanting on Classic Era)
+-- The open profession window: every recipe of the profession, learned or
+-- not (collapsed categories don't hide any)
 function W.ScanTradeSkill()
-    if not ns.char or NotMine() then return end
+    if not ns.char or NotMine() or not C_TradeSkillUI then return end
     local key, rank, max = TradeSkillLine()
     if not key then return end
-    local ids, complete = {}, true
-    if C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs then
-        -- Newer clients list every recipe of the profession, learned or not
-        for _, id in ipairs(Call(C_TradeSkillUI.GetAllRecipeIDs) or {}) do
-            local info = Call(C_TradeSkillUI.GetRecipeInfo, id)
-            if type(info) == "table" and info.learned then ids[#ids + 1] = tostring(id) end
-        end
-    else
-        for i = 1, Call(GetNumTradeSkills) or 0 do
-            local name, kind, _, expanded = Call(GetTradeSkillInfo, i)
-            if kind == "header" or kind == "subheader" then
-                if not expanded then complete = false end
-            elseif name then
-                local id = LinkId(Call(GetTradeSkillRecipeLink, i)) or ItemId(Call(GetTradeSkillItemLink, i))
-                if id then ids[#ids + 1] = id end
-            end
-        end
+    local ids = {}
+    for _, id in ipairs(Call(C_TradeSkillUI.GetAllRecipeIDs) or {}) do
+        local info = Call(C_TradeSkillUI.GetRecipeInfo, id)
+        if type(info) == "table" and info.learned then ids[#ids + 1] = tostring(id) end
     end
-    Merge(key, rank, max, ids, complete)
-end
-
--- The craft window: Enchanting on Classic Era (also the hunter's Beast
--- Training, which has no skill line and is skipped)
-function W.ScanCraft()
-    if not ns.char or NotMine() then return end
-    local name, rank, max = Call(GetCraftDisplaySkillLine)
-    if not name or IsSecret(name) then return end
-    local key = W.Key(name)
-    if not key then return end
-    local ids, complete = {}, true
-    for i = 1, Call(GetNumCrafts) or 0 do
-        local cname, _, kind, _, expanded = Call(GetCraftInfo, i)
-        if kind == "header" then
-            if not expanded then complete = false end
-        elseif cname then
-            local id = LinkId(Call(GetCraftRecipeLink, i)) or LinkId(Call(GetCraftItemLink, i))
-                       or ItemId(Call(GetCraftItemLink, i))
-            if id then ids[#ids + 1] = id end
-        end
-    end
-    Merge(key, rank, max, ids, complete)
+    Merge(key, rank, max, ids)
 end
 
 -- ---------------------------------------------------------------------------
@@ -353,7 +297,11 @@ Flush = function()
         end
     end
     pendingDelta = {}
-    ns.Touch() -- a newer rev, so the relay passes the change on to guildmates who are offline
+    -- A newer rev, so the relay passes the change on to guildmates who are
+    -- offline. Sent now, with the recipes: if it waited and the player logged
+    -- out, nobody could relay the recipes until their next login.
+    ns.Touch()
+    if ns.Guild() then ns.Comm.SendStats() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -494,25 +442,12 @@ end
 
 local nameCache = {}
 
-local function SpellName(id)
-    if C_Spell and C_Spell.GetSpellName then return Call(C_Spell.GetSpellName, id) end
-    return (Call(GetSpellInfo, id))
-end
-
-local function ItemName(id)
-    if C_Item and C_Item.GetItemNameByID then
-        local n = Call(C_Item.GetItemNameByID, id)
-        if n then return n end
-    end
-    return (Call(GetItemInfo, id))
-end
 
 -- A recipe's name in this client's language (nil if the client doesn't know it yet)
 function W.RecipeName(id)
     local n = nameCache[id]
     if n then return n end
-    local item = id:match("^i(%d+)$")
-    if item then n = ItemName(tonumber(item)) else n = SpellName(tonumber(id)) end
+    n = C_Spell and Call(C_Spell.GetSpellName, tonumber(id))
     if type(n) ~= "string" or IsSecret(n) or n == "" then return nil end
     nameCache[id] = n
     return n
@@ -656,18 +591,16 @@ local function ScanSoon(which)
     scanPending[which] = true
     C_Timer.After(0.3, function()
         scanPending[which] = nil
-        if which == "craft" then W.ScanCraft()
-        elseif which == "trade" then W.ScanTradeSkill()
+        if which == "trade" then W.ScanTradeSkill()
         else W.ScanSkills() end
     end)
 end
 
 local events = {
-    TRADE_SKILL_SHOW = "trade", TRADE_SKILL_UPDATE = "trade", TRADE_SKILL_LIST_UPDATE = "trade",
-    CRAFT_SHOW = "craft", CRAFT_UPDATE = "craft",
+    TRADE_SKILL_SHOW = "trade", TRADE_SKILL_LIST_UPDATE = "trade",
     SKILL_LINES_CHANGED = "skills",
 }
-local closes = { TRADE_SKILL_CLOSE = true, CRAFT_CLOSE = true }
+local closes = { TRADE_SKILL_CLOSE = true }
 
 frame:SetScript("OnEvent", function(_, event)
     if events[event] then

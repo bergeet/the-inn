@@ -60,6 +60,15 @@ local WidgetMT = {
     end,
 }
 
+-- Textures remember what they show. world.missingArt[file] = true plays a
+-- client without that file: SetTexture returns false, as the game does.
+function Widget:SetTexture(file)
+    self._texture, self._color = file, nil
+    return not (file and self._client.world.missingArt[file])
+end
+function Widget:SetColorTexture(r, g, b, a) self._texture, self._color = nil, { r, g, b, a } end
+function Widget:GetTexture() return self._texture end
+
 local function NewWidget(client, kind, name, parent)
     local w = setmetatable({ _client = client, _kind = kind, _scripts = {}, _events = {},
                              _shown = true, _parent = parent }, WidgetMT)
@@ -168,11 +177,8 @@ function Sim.NewWorld(opts)
         errors = {},
         violations = {},
         secret = {},                    -- values issecretvalue() reports as secret
+        missingArt = {},                -- game texture files this client "doesn't have"
         knownEvents = opts.knownEvents,
-        -- "forever": modern API (GetProfessions, enum send results, secret values)
-        -- "era":     Classic Era 1.15 (skill list professions, boolean send
-        --            results, combat log available, no secret values)
-        flavor = opts.flavor or os.getenv("SIM_FLAVOR") or "forever",
         -- The client's spell and item names (recipes are spells; some clients only link items)
         spells = { [2329] = "Elixir of Lion's Strength", [2330] = "Minor Healing Potion",
                    [3170] = "Weak Troll's Blood Potion", [17635] = "Flask of the Titans",
@@ -298,12 +304,16 @@ end
 local Client = {}
 Client.__index = Client
 
--- opts: name, rank (0 = GM), class, level, money (copper), quests, profs = { prof1 = {name, rank, skillLine}, ... }
+-- opts: name, rank (0 = GM), class, level, money (copper), quests, profs = { prof1 = {name, rank, skillLine}, ... },
+--       last (a Forever two-part name: "Lil" + last "Hjalm" is "Lil Hjalm-Realm" to the guild, and
+--       UnitName/UnitFullName give "Lil", "Hjalm"), unitFullName (what UnitFullName("player") returns, as a list)
 function World:AddPlayer(opts)
     local c = setmetatable({
         world = self,
         name = opts.name,
-        fullName = opts.name .. "-" .. self.realm,
+        last = opts.last,
+        unitFullName = opts.unitFullName,
+        fullName = opts.name .. (opts.last and (" " .. opts.last) or "") .. "-" .. self.realm,
         rank = opts.rank or 3,
         class = opts.class or "WARRIOR",
         state = {
@@ -443,7 +453,7 @@ function Client:BuildEnv()
         return st.raid or st.party or {}
     end
     env.UnitName = function(unit)
-        if unit == "player" then return client.name end
+        if unit == "player" then return client.name, client.last end
         if unit == "target" then return st.target end
         local idx = type(unit) == "string" and tonumber(unit:match("^raid(%d+)$") or unit:match("^party(%d+)$"))
         if idx then
@@ -467,117 +477,65 @@ function Client:BuildEnv()
     local function FreeSlots(bag) if bag == 0 then return st.bagFree or 10, 0 end return 0, 0 end
     local function NumSlots(bag) if bag == 0 then return st.bagSlots or 16 end return 0 end
     -- Reputation: st.factions = { standingId, ... }
-    -- PvP: st.hk, st.dk, st.highestRank. Era returns all three; Forever (1.60.1) has no dishonorable kills.
-    if world.flavor == "era" then
-        env.GetPVPLifetimeStats = function() return st.hk or 0, st.dk or 0, st.highestRank or 0 end
-        env.GetContainerNumFreeSlots = FreeSlots
-        env.GetContainerNumSlots = NumSlots
-        env.GetNumQuestLogEntries = function() return st.questLog or 0, st.questLog or 0 end
-        env.MAX_QUESTLOG_QUESTS = 20
-        env.GetNumFactions = function() return #(st.factions or {}) end
-        env.GetFactionInfo = function(i)
-            local s = (st.factions or {})[i]
-            if s then return "Faction " .. i, "", s, 0, 0, 0, false, true, false, false, true end
+    -- PvP: st.hk, st.highestRank (Forever 1.60.1 returns kills and rank)
+    env.GetPVPLifetimeStats = function() return st.hk or 0, st.highestRank or 0 end
+    -- The game's statistics, as text like the real client: st.statistics = { [id] = n },
+    -- "--" for never. Some are kept up by the simulator itself (deaths, duels).
+    -- st.mostGold (copper) is statistic 334, which the game shows as money.
+    env.GetStatistic = function(id)
+        if id == 334 and (st.mostGold or 0) > 0 then
+            local c = st.mostGold
+            local parts = {}
+            local g, si, co = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
+            if g > 0 then parts[#parts + 1] = g .. "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t" end
+            if si > 0 then parts[#parts + 1] = si .. "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t" end
+            if co > 0 then parts[#parts + 1] = co .. "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" end
+            return table.concat(parts, " ")
         end
-        env.GetPVPRankInfo = function(id) if id >= 5 then return "Rank " .. (id - 4) .. " Title", id - 4 end end
-    else
-        env.GetPVPLifetimeStats = function() return st.hk or 0, st.highestRank or 0 end
-        env.UnitFactionGroup = function() return "Horde" end
-        env.UnitSex = function() return 2 end
-        env.GetText = function(key) return "Title of " .. key end
-        env.C_Container = { GetContainerNumFreeSlots = FreeSlots, GetContainerNumSlots = NumSlots }
-        env.C_Reputation = {
-            GetNumFactions = function() return #(st.factions or {}) end,
-            GetFactionDataByIndex = function(i)
-                local s = (st.factions or {})[i]
-                if s then return { name = "Faction " .. i, reaction = s, isHeader = false } end
-            end,
-        }
+        local v = (st.statistics or {})[id]
+        if id == 588 then v = st.hk end -- the game keeps both in step
+        if v == nil or v == 0 then return "--" end
+        return tostring(v)
     end
+    env.UnitFactionGroup = function() return "Horde" end
+    env.UnitSex = function() return 2 end
+    env.GetText = function(key) return "Title of " .. key end
+    env.C_Container = { GetContainerNumFreeSlots = FreeSlots, GetContainerNumSlots = NumSlots }
+    env.C_Reputation = {
+        GetNumFactions = function() return #(st.factions or {}) end,
+        GetFactionDataByIndex = function(i)
+            local s = (st.factions or {})[i]
+            if s then return { name = "Faction " .. i, reaction = s, isHeader = false } end
+        end,
+    }
 
-    -- Profession windows. st.trade (and st.craft, Enchanting on Classic Era):
+    -- The profession window. st.trade:
     -- { name, skillLine, rank, max, linked, lines = { { header = "Potions", expanded = false },
     --   { spell = 2330, item = 118 }, ... }, unlearned = { spell, ... } }
-    local function Visible(win)
-        local out, hidden = {}, false
-        for _, l in ipairs(win and win.lines or {}) do
-            if l.header then
-                hidden = l.expanded == false
-                out[#out + 1] = l
-            elseif not hidden then
-                out[#out + 1] = l
-            end
-        end
-        return out
-    end
-    local function Link(kind, id, name) return string.format("|cffffffff|H%s:%d|h[%s]|h|r", kind, id, name or "?") end
-    if world.flavor == "era" then
-        env.GetSpellInfo = function(id) local n = world.spells[id] if n then return n, nil, 136243 end end
-        env.GetItemInfo = function(id) return world.items[id] end
-        env.GetTradeSkillLine = function()
+    env.C_Spell = { GetSpellName = function(id) return world.spells[id] end }
+    -- Every recipe of the open profession, learned or not
+    env.C_TradeSkillUI = {
+        GetBaseProfessionInfo = function()
             local t = st.trade
-            if not t then return "UNKNOWN", 0, 0 end
-            return t.name, t.rank, t.max
-        end
-        env.GetNumTradeSkills = function() return #Visible(st.trade) end
-        env.GetTradeSkillInfo = function(i)
-            local l = Visible(st.trade)[i]
-            if not l then return nil end
-            if l.header then return l.header, "header", 0, l.expanded ~= false end
-            return world.spells[l.spell] or "?", "optimal", 0, false
-        end
-        env.GetTradeSkillRecipeLink = function(i)
-            local l = Visible(st.trade)[i]
-            if l and not l.header then return Link("enchant", l.spell, world.spells[l.spell]) end
-        end
-        env.GetTradeSkillItemLink = function(i)
-            local l = Visible(st.trade)[i]
-            if l and l.item then return Link("item", l.item, world.items[l.item]) end
-        end
-        -- The craft window (no GetCraftRecipeLink here; the item link of an
-        -- enchant is an enchant link, as on the real client)
-        env.GetCraftDisplaySkillLine = function()
-            local c = st.craft
-            if c then return c.name, c.rank, c.max end
-        end
-        env.GetNumCrafts = function() return #Visible(st.craft) end
-        env.GetCraftInfo = function(i)
-            local l = Visible(st.craft)[i]
-            if not l then return nil end
-            if l.header then return l.header, nil, "header", 0, l.expanded ~= false end
-            return world.spells[l.spell] or "?", nil, "optimal", 0, false, 0, 1
-        end
-        env.GetCraftItemLink = function(i)
-            local l = Visible(st.craft)[i]
-            if l and not l.header then return Link("enchant", l.spell, world.spells[l.spell]) end
-        end
-    else
-        env.C_Spell = { GetSpellName = function(id) return world.spells[id] end }
-        env.C_Item = { GetItemNameByID = function(id) return world.items[id] end }
-        -- Newer clients: every recipe of the open profession, learned or not
-        env.C_TradeSkillUI = {
-            GetBaseProfessionInfo = function()
-                local t = st.trade
-                if not t then return nil end
-                return { professionID = t.skillLine, professionName = t.name, skillLevel = t.rank, maxSkillLevel = t.max }
-            end,
-            GetAllRecipeIDs = function()
-                local ids = {}
-                for _, l in ipairs(st.trade and st.trade.lines or {}) do
-                    if l.spell then ids[#ids + 1] = l.spell end
-                end
-                for _, id in ipairs(st.trade and st.trade.unlearned or {}) do ids[#ids + 1] = id end
-                return ids
-            end,
-            GetRecipeInfo = function(id)
-                for _, u in ipairs(st.trade and st.trade.unlearned or {}) do
-                    if u == id then return { recipeID = id, learned = false } end
-                end
-                return { recipeID = id, learned = true }
-            end,
-            IsTradeSkillLinked = function() return st.trade ~= nil and st.trade.linked == true end,
-        }
-    end
+            if not t then return nil end
+            return { professionID = t.skillLine, professionName = t.name, skillLevel = t.rank, maxSkillLevel = t.max }
+        end,
+        GetAllRecipeIDs = function()
+            local ids = {}
+            for _, l in ipairs(st.trade and st.trade.lines or {}) do
+                if l.spell then ids[#ids + 1] = l.spell end
+            end
+            for _, id in ipairs(st.trade and st.trade.unlearned or {}) do ids[#ids + 1] = id end
+            return ids
+        end,
+        GetRecipeInfo = function(id)
+            for _, u in ipairs(st.trade and st.trade.unlearned or {}) do
+                if u == id then return { recipeID = id, learned = false } end
+            end
+            return { recipeID = id, learned = true }
+        end,
+        IsTradeSkillLinked = function() return st.trade ~= nil and st.trade.linked == true end,
+    }
 
     env.C_Timer = {
         After = function(d, fn) world:After(client, d, fn) end,
@@ -586,7 +544,11 @@ function Client:BuildEnv()
     }
 
     -- Player
-    env.UnitFullName = function(unit) if unit == "player" then return client.name, world.realm end end
+    env.UnitFullName = function(unit)
+        if unit ~= "player" then return nil end
+        if client.unitFullName then return unpack(client.unitFullName) end
+        return client.name, client.last or world.realm
+    end
     env.GetNormalizedRealmName = function() return world.realm end
     env.UnitLevel = function(unit)
         if unit == "player" then return st.level end
@@ -595,67 +557,23 @@ function Client:BuildEnv()
     end
     env.GetMoney = function() return st.money end
     env.C_QuestLog = {}
-    if world.flavor ~= "era" then
-        env.C_QuestLog.GetAllCompletedQuestIDs = function()
-            local t = {}
-            for i = 1, st.quests do t[i] = i end
-            return t
-        end
-        env.C_QuestLog.GetNumQuestLogEntries = function() return st.questLog or 0, st.questLog or 0 end
-        env.C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
-        env.C_QuestLog.AbandonQuest = function() end
+    env.C_QuestLog.GetAllCompletedQuestIDs = function()
+        local t = {}
+        for i = 1, st.quests do t[i] = i end
+        return t
     end
-    local era = world.flavor == "era"
-    if not era then
-        env.GetProfessions = function()
-            local r = {}
-            for i, slot in ipairs(PROF_SLOTS) do r[i] = st.profs[slot] and i or nil end
-            return r[1], r[2], r[3], r[4], r[5]
-        end
-        env.GetProfessionInfo = function(index)
-            local p = st.profs[PROF_SLOTS[index]]
-            if not p then return nil end
-            return p.name, 134400, p.rank, 300, 0, 0, p.skillLine, 0
-        end
-    else
-        -- Classic Era: Character > Skills list. In Era every profession,
-        -- secondary ones included, can be unlearned (isAbandonable).
-        local function SkillLines()
-            local lines = { { name = "Professions", header = true } }
-            for _, slot in ipairs({ "prof1", "prof2" }) do
-                if st.profs[slot] then lines[#lines + 1] = st.profs[slot] end
-            end
-            lines[#lines + 1] = { name = "Secondary Skills", header = true }
-            for _, slot in ipairs({ "cooking", "fishing", "firstAid" }) do
-                if st.profs[slot] then lines[#lines + 1] = st.profs[slot] end
-            end
-            lines[#lines + 1] = { name = "Weapon Skills", header = true }
-            lines[#lines + 1] = { name = "Swords", rank = 300, weapon = true }
-            return lines
-        end
-        env.GetNumSkillLines = function() return #SkillLines() end
-        env.GetSkillLineInfo = function(i)
-            local l = SkillLines()[i]
-            if not l then return nil end
-            if l.header then return l.name, true, true, 0, 0, 0, 0, false end
-            return l.name, false, false, l.rank, 0, 0, 300, not l.weapon
-        end
-        env.GetQuestsCompleted = function()
-            local t = {}
-            for i = 1, st.quests do t[i * 7] = true end
-            return t
-        end
-        env.SendChatMessage = function(msg, chatType)
-            client.chat[#client.chat + 1] = { msg = msg, chatType = chatType }
-        end
-        env.GuildRoster = function()
-            if st.inGuild then world:After(client, 0.2, function() client:Fire("GUILD_ROSTER_UPDATE", false) end) end
-        end
-        env.IsInInstance = function() return st.inInstance == true, st.inInstance and "party" or "none" end
-        env.CombatLogGetCurrentEventInfo = function()
-            local e = client.cleu or {}
-            return unpack(e, 1, 12)
-        end
+    env.C_QuestLog.GetNumQuestLogEntries = function() return st.questLog or 0, st.questLog or 0 end
+    env.C_QuestLog.GetMaxNumQuestsCanAccept = function() return 25 end
+    env.C_QuestLog.AbandonQuest = function() end
+    env.GetProfessions = function()
+        local r = {}
+        for i, slot in ipairs(PROF_SLOTS) do r[i] = st.profs[slot] and i or nil end
+        return r[1], r[2], r[3], r[4], r[5]
+    end
+    env.GetProfessionInfo = function(index)
+        local p = st.profs[PROF_SLOTS[index]]
+        if not p then return nil end
+        return p.name, 134400, p.rank, 300, 0, 0, p.skillLine, 0
     end
 
     -- Guild
@@ -677,13 +595,11 @@ function Client:BuildEnv()
         return m.fullName, world.rankNames[m.rank], m.rank, m.state.level, m.class, "Orgrimmar", "", "",
                m.online, 0, m.class
     end
-    if world.flavor ~= "era" then
-        env.C_GuildInfo = {
-            GuildRoster = function()
-                if st.inGuild then world:After(client, 0.2, function() client:Fire("GUILD_ROSTER_UPDATE", false) end) end
-            end,
-        }
-    end
+    env.C_GuildInfo = {
+        GuildRoster = function()
+            if st.inGuild then world:After(client, 0.2, function() client:Fire("GUILD_ROSTER_UPDATE", false) end) end
+        end,
+    }
 
     -- Chat
     env.C_ChatInfo = {
@@ -699,7 +615,6 @@ function Client:BuildEnv()
             end
             if chatType ~= "GUILD" and chatType ~= "WHISPER" then return Sim.SEND_RESULT.InvalidChatType end
             if world.sendResult ~= Sim.SEND_RESULT.Success then
-                if world.flavor == "era" then return false end
                 return world.sendResult
             end
             client.sent[#client.sent + 1] = msg
@@ -710,24 +625,30 @@ function Client:BuildEnv()
                         to:Fire("CHAT_MSG_ADDON", prefix, msg, "WHISPER", client.fullName, to.fullName, 0, 0, "", 0)
                     end)
                 end
-                return world.flavor == "era" and true or Sim.SEND_RESULT.Success
+                return Sim.SEND_RESULT.Success
             end
             world:Deliver(client, prefix, msg, chatType)
-            if world.flavor == "era" then return true end
             return Sim.SEND_RESULT.Success
         end,
     }
-    if world.flavor ~= "era" then
-        env.C_ChatInfo.SendChatMessage = function(msg, chatType)
-            client.chat[#client.chat + 1] = { msg = msg, chatType = chatType }
-        end
+    env.C_ChatInfo.SendChatMessage = function(msg, chatType)
+        client.chat[#client.chat + 1] = { msg = msg, chatType = chatType }
     end
     return env
 end
 
--- Die (and optionally come back after `ghostFor` seconds via the corpse).
-function Client:Die()
+-- The game counts something in its statistics
+function Client:Count(id, n)
+    local stats = self.state.statistics or {}
+    self.state.statistics = stats
+    stats[id] = (stats[id] or 0) + (n or 1)
+end
+
+-- Die; how: "falling", "drowning" or "fire" (the game counts those too)
+function Client:Die(how)
     self.state.dead = true
+    self:Count(60)
+    if how then self:Count(({ falling = 114, drowning = 112, fire = 115 })[how]) end
     self:Fire("PLAYER_DEAD")
 end
 
@@ -746,26 +667,13 @@ function World:System(msg)
 end
 
 function World:Duel(winner, loser, fled)
+    if type(winner) == "table" then winner:Count(319) end
+    if type(loser) == "table" then loser:Count(320) end
     if fled then
         self:System(string.format("%s has fled from %s in a duel", loser.name or loser, winner.name or winner))
     else
         self:System(string.format("%s has defeated %s in a duel", winner.name or winner, loser.name or loser))
     end
-end
-
--- Classic Era: enter or leave an instance (fires the zone events).
-function Client:SetInstance(inside)
-    self.state.inInstance = inside
-    self:Fire("PLAYER_ENTERING_WORLD", false, false)
-end
-
--- Classic Era: post one combat log line, e.g. client:CombatLog("UNIT_DIED", "Edwin VanCleef")
--- opts: source (GUID), dest (GUID), env (environmental damage type)
-function Client:CombatLog(subEvent, destName, opts)
-    opts = opts or {}
-    self.cleu = { self.world:ServerTime(), subEvent, false, opts.source or "", "", 0, 0,
-                  opts.dest or "Creature-0-1", destName, 0x10a48, 0, opts.env }
-    self:Fire("COMBAT_LOG_EVENT_UNFILTERED")
 end
 
 function Client:GUID() return "Player-1-" .. self.name end
@@ -800,22 +708,12 @@ end
 
 -- The player opens (or closes) their profession window. win: see BuildEnv.
 function Client:OpenProfession(win)
-    if win.craft then
-        self.state.craft = win
-        self:Fire("CRAFT_SHOW")
-        self:Fire("CRAFT_UPDATE")
-    else
-        self.state.trade = win
-        self:Fire("TRADE_SKILL_SHOW")
-        self:Fire(self.world.flavor == "era" and "TRADE_SKILL_UPDATE" or "TRADE_SKILL_LIST_UPDATE")
-    end
+    self.state.trade = win
+    self:Fire("TRADE_SKILL_SHOW")
+    self:Fire("TRADE_SKILL_LIST_UPDATE")
 end
 
 function Client:CloseProfession()
-    if self.state.craft then
-        self.state.craft = nil
-        self:Fire("CRAFT_CLOSE")
-    end
     if self.state.trade then
         self.state.trade = nil
         self:Fire("TRADE_SKILL_CLOSE")
@@ -880,7 +778,7 @@ end
 
 -- Send a raw addon message as this client (for forged-message tests).
 function Client:Raw(msg)
-    return self.env.C_ChatInfo.SendAddonMessage("GACH1", msg, "GUILD")
+    return self.env.C_ChatInfo.SendAddonMessage("GACH2", msg, "GUILD")
 end
 
 -- Lines in the log that look like Lua errors caught by the addon's own pcall.
